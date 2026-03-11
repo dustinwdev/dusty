@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dusty",
+    "crates/dusty-reactive",
+    "crates/dusty-core",
+    "crates/dusty-style",
+    "crates/dusty-layout",
+    "crates/dusty-widgets",
+    "crates/dusty-text",
+    "crates/dusty-a11y",
+    "crates/dusty-render",
+    "crates/dusty-platform",
+    "crates/dusty-macros",
+    "crates/dusty-devtools",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.75"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+
+[workspace.dependencies]
