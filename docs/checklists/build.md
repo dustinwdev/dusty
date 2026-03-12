@@ -18,12 +18,12 @@ Create per-phase design notes in `docs/design/` as needed.
 
 Crate: `dusty-reactive`
 
-- [ ] `Signal<T>` — create, get, set, update
-- [ ] `ReadSignal<T>` / `WriteSignal<T>` split access
-- [ ] Subscriber tracking — signals know their dependents
-- [ ] Notification — changing a signal notifies subscribers
-- [ ] `SignalGuard` or similar for batched reads without cloning
-- [ ] Tests: create, read, write, update closure, multiple subscribers, drop cleanup
+- [x] `Signal<T>` — create, get, set, update
+- [x] `ReadSignal<T>` / `WriteSignal<T>` split access
+- [x] Subscriber tracking — signals know their dependents
+- [x] Notification — changing a signal notifies subscribers
+- [x] `with()` for zero-clone ref access (replaces `SignalGuard`)
+- [x] Tests: create, read, write, update closure, multiple subscribers, drop cleanup
 
 ---
 
@@ -31,11 +31,11 @@ Crate: `dusty-reactive`
 
 Crate: `dusty-reactive`
 
-- [ ] `Memo<T>` — cached derived computation
-- [ ] Auto-tracking — memo records which signals it reads during evaluation
-- [ ] Lazy re-evaluation — only recompute when a dependency changed AND value is read
-- [ ] Diamond dependency handling — memo depending on two signals that share a source
-- [ ] Tests: basic derivation, caching (doesn't recompute without change), diamond, chained memos
+- [x] `Memo<T>` — cached derived computation
+- [x] Auto-tracking — memo records which signals it reads during evaluation
+- [x] Lazy re-evaluation — only recompute when a dependency changed AND value is read
+- [x] Diamond dependency handling — memo depending on two signals that share a source
+- [x] Tests: basic derivation, caching (doesn't recompute without change), diamond, chained memos
 
 ---
 
@@ -43,12 +43,12 @@ Crate: `dusty-reactive`
 
 Crate: `dusty-reactive`
 
-- [ ] `Effect` — side effect that re-runs when dependencies change
-- [ ] Auto-tracking for effects (same mechanism as memos)
-- [ ] `Scope` — arena-based ownership for reactive primitives
-- [ ] Disposal — dropping a scope cleans up all signals/memos/effects within it
-- [ ] Nested scopes — child scope disposal doesn't affect parent
-- [ ] Tests: effect runs on change, effect cleanup, scope disposal, nested scopes
+- [x] `Effect` — side effect that re-runs when dependencies change
+- [x] Auto-tracking for effects (same mechanism as memos)
+- [x] `Scope` — arena-based ownership for reactive primitives
+- [x] Disposal — dropping a scope cleans up all signals/memos/effects within it
+- [x] Nested scopes — child scope disposal doesn't affect parent
+- [x] Tests: effect runs on change, effect cleanup, scope disposal, nested scopes
 
 ---
 
@@ -56,12 +56,12 @@ Crate: `dusty-reactive`
 
 Crate: `dusty-reactive`
 
-- [ ] `batch()` — coalesce multiple signal writes, notify once
-- [ ] `Resource<T>` — async data that integrates with signals
-- [ ] Resource states: loading, ready, error
-- [ ] Resource re-fetches when source signal changes
-- [ ] `untrack()` — read a signal without subscribing
-- [ ] Tests: batch coalesces notifications, resource lifecycle, untrack
+- [x] `batch()` — coalesce multiple signal writes, notify once
+- [x] `Resource<T>` — async data that integrates with signals
+- [x] Resource states: loading, ready, error
+- [x] Resource re-fetches when source signal changes
+- [x] `untrack()` — read a signal without subscribing
+- [x] Tests: batch coalesces notifications, resource lifecycle, untrack
 
 ---
 
@@ -197,7 +197,10 @@ Crate: `dusty-widgets`
 - [ ] `Image` — image display with sizing modes (cover, contain, fill)
 - [ ] `Divider` — horizontal/vertical separator
 - [ ] `Spacer` — flexible space
-- [ ] Tests: text reactivity, image sizing, divider orientation
+- [ ] `Canvas` — 2D drawing escape hatch (Frame API: paths, fills, strokes, transforms, text, images)
+- [ ] `Canvas` reactive integration — draw closure reads signals, caches geometry when deps unchanged
+- [ ] `Canvas` input — optional event handling for interactive canvases (click, drag, hover within bounds)
+- [ ] Tests: text reactivity, image sizing, divider orientation, canvas draw + reactive redraw + input
 
 ---
 
