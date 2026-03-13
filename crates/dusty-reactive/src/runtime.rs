@@ -2,6 +2,7 @@
 
 use std::any::Any;
 use std::cell::RefCell;
+use std::collections::HashSet;
 
 use crate::error::{ReactiveError, Result};
 use crate::subscriber::SubscriberId;
@@ -17,7 +18,7 @@ pub struct SignalId {
 pub struct SignalSlot {
     pub value: Box<dyn Any>,
     pub generation: u64,
-    pub subscribers: Vec<SubscriberId>,
+    pub subscribers: HashSet<SubscriberId>,
     pub alive: bool,
     /// Incremented each time the value changes. Used by memos to detect
     /// whether a dependency's value actually changed since last evaluation.
@@ -55,7 +56,7 @@ pub struct Runtime {
     pub scope_free_list: Vec<usize>,
     pub scope_stack: Vec<ScopeId>,
     pub batch_depth: usize,
-    pub pending_batch_subscribers: Vec<SubscriberId>,
+    pub pending_batch_subscribers: HashSet<SubscriberId>,
 }
 
 impl Runtime {
@@ -72,7 +73,7 @@ impl Runtime {
             scope_free_list: Vec::new(),
             scope_stack: Vec::new(),
             batch_depth: 0,
-            pending_batch_subscribers: Vec::new(),
+            pending_batch_subscribers: HashSet::new(),
         }
     }
 }
@@ -175,7 +176,7 @@ mod tests {
             rt.signals.push(SignalSlot {
                 value: Box::new(42_i32),
                 generation: 0,
-                subscribers: Vec::new(),
+                subscribers: HashSet::new(),
                 alive: true,
                 version: 0,
             });

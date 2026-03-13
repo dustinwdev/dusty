@@ -18,7 +18,7 @@
 //! ```
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -220,7 +220,7 @@ fn propagate_dirty(signal_id: SignalId) {
         rt.signals
             .get(signal_id.index)
             .filter(|slot| slot.alive && slot.generation == signal_id.generation)
-            .map_or_else(Vec::new, |slot| slot.subscribers.clone())
+            .map_or_else(HashSet::new, |slot| slot.subscribers.clone())
     });
 
     if let Ok(subs) = subs {
@@ -254,7 +254,7 @@ pub fn dispose_memo<T: 'static>(memo: &Memo<T>) -> Result<()> {
         let _ = with_runtime_mut(|rt| {
             if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
                 if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.retain(|s| *s != sub_id);
+                    slot.subscribers.remove(&sub_id);
                 }
             }
         });
@@ -344,7 +344,7 @@ fn evaluate_memo<T: Clone + PartialEq + 'static>(
         with_runtime_mut(|rt| {
             if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
                 if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.retain(|s| *s != sub_id);
+                    slot.subscribers.remove(&sub_id);
                 }
             }
         })?;
@@ -400,7 +400,7 @@ fn evaluate_memo<T: Clone + PartialEq + 'static>(
 /// `pending_batch_subscribers` instead of being invoked immediately.
 fn update_and_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()> {
     let (subs, in_batch) = with_runtime_mut(
-        |rt| -> std::result::Result<(Vec<SubscriberId>, bool), ReactiveError> {
+        |rt| -> std::result::Result<(HashSet<SubscriberId>, bool), ReactiveError> {
             let slot = rt
                 .signals
                 .get_mut(signal_id.index)
@@ -418,7 +418,7 @@ fn update_and_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()
             let subs = slot.subscribers.clone();
             let batching = rt.batch_depth > 0;
             if batching {
-                rt.pending_batch_subscribers.extend_from_slice(&subs);
+                rt.pending_batch_subscribers.extend(subs.iter().copied());
             }
             Ok((subs, batching))
         },

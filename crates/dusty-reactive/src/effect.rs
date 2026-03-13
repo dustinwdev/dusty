@@ -250,7 +250,7 @@ fn execute_effect(state: &Rc<EffectInner>) -> Result<()> {
         let _ = with_runtime_mut(|rt| {
             if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
                 if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.retain(|s| *s != sub_id);
+                    slot.subscribers.remove(&sub_id);
                 }
             }
         });
@@ -284,7 +284,7 @@ fn execute_effect(state: &Rc<EffectInner>) -> Result<()> {
                 let _ = with_runtime_mut(|rt| {
                     if let Some(slot) = rt.signals.get_mut(sig_id.index) {
                         if slot.alive && slot.generation == sig_id.generation {
-                            slot.subscribers.retain(|s| *s != sub_id);
+                            slot.subscribers.remove(&sub_id);
                         }
                     }
                 });
@@ -338,7 +338,7 @@ fn dispose_effect_inner(state: &EffectInner) -> Result<()> {
         let _ = with_runtime_mut(|rt| {
             if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
                 if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.retain(|s| *s != sub_id);
+                    slot.subscribers.remove(&sub_id);
                 }
             }
         });

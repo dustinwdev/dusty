@@ -4,6 +4,7 @@
 //! Signals are `Copy` handles backed by generational indices into the
 //! thread-local runtime.
 
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use crate::error::{ReactiveError, Result};
@@ -150,7 +151,7 @@ pub(crate) fn create_signal_raw<T: 'static>(value: T) -> Result<SignalId> {
             rt.signals[index] = SignalSlot {
                 value: Box::new(value),
                 generation,
-                subscribers: Vec::new(),
+                subscribers: HashSet::new(),
                 alive: true,
                 version: 0,
             };
@@ -160,7 +161,7 @@ pub(crate) fn create_signal_raw<T: 'static>(value: T) -> Result<SignalId> {
             rt.signals.push(SignalSlot {
                 value: Box::new(value),
                 generation: 0,
-                subscribers: Vec::new(),
+                subscribers: HashSet::new(),
                 alive: true,
                 version: 0,
             });
@@ -199,7 +200,7 @@ pub fn dispose_signal<T: 'static>(signal: Signal<T>) -> Result<()> {
 fn dispose_signal_raw(id: SignalId) -> Result<()> {
     // Collect subscriber IDs to clean up, then mark slot dead.
     let subscriber_ids = with_runtime_mut(
-        |rt| -> std::result::Result<Vec<SubscriberId>, ReactiveError> {
+        |rt| -> std::result::Result<HashSet<SubscriberId>, ReactiveError> {
             let slot = rt
                 .signals
                 .get_mut(id.index)
@@ -254,11 +255,8 @@ pub(crate) fn track_signal(id: SignalId) -> Result<()> {
     if let Some(sub_id) = maybe_sub {
         with_runtime_mut(|rt| {
             if let Some(slot) = rt.signals.get_mut(id.index) {
-                if slot.alive
-                    && slot.generation == id.generation
-                    && !slot.subscribers.contains(&sub_id)
-                {
-                    slot.subscribers.push(sub_id);
+                if slot.alive && slot.generation == id.generation {
+                    slot.subscribers.insert(sub_id);
                 }
             }
             // Record this signal as a dependency of the current tracking scope
@@ -277,7 +275,7 @@ pub(crate) fn track_signal(id: SignalId) -> Result<()> {
 pub(crate) fn set_and_notify<T: 'static>(id: SignalId, mutate: impl FnOnce(&mut T)) -> Result<()> {
     // Phase 1: mutate value + collect subscribers, check batch state
     let (subs, in_batch) = with_runtime_mut(
-        |rt| -> std::result::Result<(Vec<SubscriberId>, bool), ReactiveError> {
+        |rt| -> std::result::Result<(HashSet<SubscriberId>, bool), ReactiveError> {
             let slot = rt
                 .signals
                 .get_mut(id.index)
@@ -295,7 +293,7 @@ pub(crate) fn set_and_notify<T: 'static>(id: SignalId, mutate: impl FnOnce(&mut 
             let subs = slot.subscribers.clone();
             let batching = rt.batch_depth > 0;
             if batching {
-                rt.pending_batch_subscribers.extend_from_slice(&subs);
+                rt.pending_batch_subscribers.extend(subs.iter().copied());
             }
             Ok((subs, batching))
         },
@@ -644,7 +642,7 @@ mod tests {
 
             // Manually subscribe to the signal
             crate::runtime::with_runtime_mut(|rt| {
-                rt.signals[sig.read().id.index].subscribers.push(sub_id);
+                rt.signals[sig.read().id.index].subscribers.insert(sub_id);
             })
             .unwrap();
 
@@ -669,7 +667,7 @@ mod tests {
             .unwrap();
 
             crate::runtime::with_runtime_mut(|rt| {
-                rt.signals[sig.read().id.index].subscribers.push(sub_id);
+                rt.signals[sig.read().id.index].subscribers.insert(sub_id);
             })
             .unwrap();
 
@@ -699,8 +697,8 @@ mod tests {
 
             crate::runtime::with_runtime_mut(|rt| {
                 let subs = &mut rt.signals[sig.read().id.index].subscribers;
-                subs.push(sub_a);
-                subs.push(sub_b);
+                subs.insert(sub_a);
+                subs.insert(sub_b);
             })
             .unwrap();
 
@@ -769,7 +767,7 @@ mod tests {
             .unwrap();
 
             crate::runtime::with_runtime_mut(|rt| {
-                rt.signals[sig.read().id.index].subscribers.push(sub_id);
+                rt.signals[sig.read().id.index].subscribers.insert(sub_id);
             })
             .unwrap();
 
@@ -829,7 +827,7 @@ mod tests {
             .unwrap();
 
             crate::runtime::with_runtime_mut(|rt| {
-                rt.signals[sig.read().id.index].subscribers.push(sub_id);
+                rt.signals[sig.read().id.index].subscribers.insert(sub_id);
             })
             .unwrap();
 
@@ -840,6 +838,47 @@ mod tests {
                 assert!(rt.subscribers[sub_id.index].is_none());
             })
             .unwrap();
+        });
+    }
+
+    // -- HashSet subscriber properties --
+
+    #[test]
+    fn idempotent_subscriber_tracking() {
+        with_test_runtime(|| {
+            let sig = create_signal(0).unwrap();
+            let sub_id = crate::subscriber::register_subscriber(|| {}).unwrap();
+
+            crate::subscriber::push_tracking(sub_id).unwrap();
+            let _v1 = sig.get().unwrap();
+            let _v2 = sig.get().unwrap(); // read again from same context
+            crate::subscriber::pop_tracking().unwrap();
+
+            let count = crate::runtime::with_runtime(|rt| {
+                rt.signals[sig.read().id.index].subscribers.len()
+            })
+            .unwrap();
+            assert_eq!(count, 1);
+        });
+    }
+
+    #[test]
+    fn signal_with_many_subscribers_tracks_correctly() {
+        with_test_runtime(|| {
+            let sig = create_signal(0).unwrap();
+
+            for _ in 0..100 {
+                let sub_id = crate::subscriber::register_subscriber(|| {}).unwrap();
+                crate::subscriber::push_tracking(sub_id).unwrap();
+                let _v = sig.get().unwrap();
+                crate::subscriber::pop_tracking().unwrap();
+            }
+
+            let count = crate::runtime::with_runtime(|rt| {
+                rt.signals[sig.read().id.index].subscribers.len()
+            })
+            .unwrap();
+            assert_eq!(count, 100);
         });
     }
 

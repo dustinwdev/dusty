@@ -21,6 +21,8 @@
 //! # dusty_reactive::dispose_runtime();
 //! ```
 
+use std::collections::HashSet;
+
 use crate::error::Result;
 use crate::runtime::with_runtime_mut;
 use crate::subscriber::SubscriberId;
@@ -67,23 +69,11 @@ pub fn batch<T>(f: impl FnOnce() -> T) -> Result<T> {
     Ok(result)
 }
 
-/// Deduplicate subscriber IDs, call each callback once, then flush effects.
-fn flush_batch(subs: Vec<SubscriberId>) -> Result<()> {
-    // Deduplicate while preserving first-seen order
-    let mut seen = Vec::new();
-    let unique: Vec<SubscriberId> = subs
-        .into_iter()
-        .filter(|id| {
-            if seen.contains(id) {
-                false
-            } else {
-                seen.push(*id);
-                true
-            }
-        })
-        .collect();
-
-    for sub_id in unique {
+/// Invoke each queued subscriber once, then flush effects.
+///
+/// The `HashSet` guarantees uniqueness — no deduplication needed.
+fn flush_batch(subs: HashSet<SubscriberId>) -> Result<()> {
+    for sub_id in subs {
         crate::subscriber::invoke_subscriber(sub_id)?;
     }
 
