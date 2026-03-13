@@ -248,6 +248,41 @@ pub(crate) fn with_signal_value<T: 'static, R>(id: SignalId, f: impl FnOnce(&T) 
     })?
 }
 
+/// Combined track + read in a single mutable borrow cycle.
+///
+/// Reduces `ReadSignal::get()` from 3 separate borrow cycles (`current_tracking`,
+/// `track_signal`, `with_signal_value`) down to 1. This is the hot path for signal reads.
+pub(crate) fn track_and_read<T: 'static, R>(id: SignalId, f: impl FnOnce(&T) -> R) -> Result<R> {
+    with_runtime_mut(|rt| -> std::result::Result<R, ReactiveError> {
+        // Track (if active)
+        if let Some(&sub_id) = rt.tracking_stack.last() {
+            if let Some(slot) = rt.signals.get_mut(id.index) {
+                if slot.alive && slot.generation == id.generation {
+                    slot.subscribers.insert(sub_id);
+                }
+            }
+            if let Some(deps) = rt.dependency_stack.last_mut() {
+                if !deps.contains(&id) {
+                    deps.push(id);
+                }
+            }
+        }
+        // Read
+        let slot = rt
+            .signals
+            .get(id.index)
+            .ok_or(ReactiveError::SignalDisposed)?;
+        if !slot.alive || slot.generation != id.generation {
+            return Err(ReactiveError::SignalDisposed);
+        }
+        let value = slot
+            .value
+            .downcast_ref::<T>()
+            .ok_or(ReactiveError::TypeMismatch)?;
+        Ok(f(value))
+    })?
+}
+
 /// Register the current tracking context as a subscriber to this signal.
 /// Also records the signal in the dependency stack for memo dependency tracking.
 pub(crate) fn track_signal(id: SignalId) -> Result<()> {
@@ -329,8 +364,7 @@ impl<T: 'static> ReadSignal<T> {
     where
         T: Clone,
     {
-        track_signal(self.id)?;
-        with_signal_value(self.id, T::clone)
+        track_and_read(self.id, T::clone)
     }
 
     /// Access the signal's value by reference without cloning. Registers
@@ -340,8 +374,7 @@ impl<T: 'static> ReadSignal<T> {
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
-        track_signal(self.id)?;
-        with_signal_value(self.id, f)
+        track_and_read(self.id, f)
     }
 
     /// Access the signal's value by reference without tracking.
