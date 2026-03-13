@@ -7,6 +7,8 @@
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
+use smallvec::SmallVec;
+
 use crate::error::{ReactiveError, Result};
 use crate::runtime::{with_runtime, with_runtime_mut, SignalId, SignalSlot};
 use crate::subscriber::SubscriberId;
@@ -310,7 +312,7 @@ pub(crate) fn track_signal(id: SignalId) -> Result<()> {
 pub(crate) fn set_and_notify<T: 'static>(id: SignalId, mutate: impl FnOnce(&mut T)) -> Result<()> {
     // Phase 1: mutate value + collect subscribers, check batch state
     let (subs, in_batch) = with_runtime_mut(
-        |rt| -> std::result::Result<(HashSet<SubscriberId>, bool), ReactiveError> {
+        |rt| -> std::result::Result<(SmallVec<[SubscriberId; 8]>, bool), ReactiveError> {
             let slot = rt
                 .signals
                 .get_mut(id.index)
@@ -325,7 +327,7 @@ pub(crate) fn set_and_notify<T: 'static>(id: SignalId, mutate: impl FnOnce(&mut 
                 .ok_or(ReactiveError::TypeMismatch)?;
             mutate(value);
             slot.version += 1;
-            let subs = slot.subscribers.clone();
+            let subs: SmallVec<[SubscriberId; 8]> = slot.subscribers.iter().copied().collect();
             let batching = rt.batch_depth > 0;
             if batching {
                 rt.pending_batch_subscribers.extend(subs.iter().copied());
@@ -912,6 +914,37 @@ mod tests {
             })
             .unwrap();
             assert_eq!(count, 100);
+        });
+    }
+
+    // -- SmallVec spill path --
+
+    #[test]
+    fn notify_spills_beyond_inline_capacity() {
+        with_test_runtime(|| {
+            let sig = create_signal(0).unwrap();
+            let counts: Vec<Rc<Cell<u32>>> = (0..20).map(|_| Rc::new(Cell::new(0))).collect();
+
+            for count in &counts {
+                let c = Rc::clone(count);
+                let _effect = crate::effect::create_effect(move || {
+                    let _v = sig.get().unwrap();
+                    c.set(c.get() + 1);
+                })
+                .unwrap();
+            }
+
+            // All effects ran once on creation
+            for count in &counts {
+                assert_eq!(count.get(), 1);
+            }
+
+            sig.set(1).unwrap();
+
+            // All 20 should have been notified
+            for count in &counts {
+                assert_eq!(count.get(), 2);
+            }
         });
     }
 

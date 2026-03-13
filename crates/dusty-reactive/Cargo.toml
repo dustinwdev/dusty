@@ -6,6 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 description = "Fine-grained reactive primitives for Dusty"
 
+[dependencies]
+smallvec = "1"
+
 [dev-dependencies]
 static_assertions = "1.1"
 criterion = { version = "0.5", features = ["html_reports"] }

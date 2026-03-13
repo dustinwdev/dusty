@@ -18,9 +18,11 @@
 //! ```
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::rc::Rc;
+
+use smallvec::SmallVec;
 
 use crate::error::{ReactiveError, Result};
 use crate::runtime::{with_runtime, with_runtime_mut, SignalId};
@@ -216,11 +218,13 @@ where
 /// notification), when `batch_depth` is 0. The generation check in
 /// `invoke_subscriber` ensures stale references are silently skipped.
 fn propagate_dirty(signal_id: SignalId) {
-    let subs = with_runtime(|rt| {
+    let subs: std::result::Result<SmallVec<[SubscriberId; 8]>, _> = with_runtime(|rt| {
         rt.signals
             .get(signal_id.index)
             .filter(|slot| slot.alive && slot.generation == signal_id.generation)
-            .map_or_else(HashSet::new, |slot| slot.subscribers.clone())
+            .map_or_else(SmallVec::new, |slot| {
+                slot.subscribers.iter().copied().collect()
+            })
     });
 
     if let Ok(subs) = subs {
@@ -400,7 +404,7 @@ fn evaluate_memo<T: Clone + PartialEq + 'static>(
 /// `pending_batch_subscribers` instead of being invoked immediately.
 fn update_and_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()> {
     let (subs, in_batch) = with_runtime_mut(
-        |rt| -> std::result::Result<(HashSet<SubscriberId>, bool), ReactiveError> {
+        |rt| -> std::result::Result<(SmallVec<[SubscriberId; 8]>, bool), ReactiveError> {
             let slot = rt
                 .signals
                 .get_mut(signal_id.index)
@@ -415,7 +419,7 @@ fn update_and_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()
                 .ok_or(ReactiveError::TypeMismatch)?;
             *value = Some(new_value);
             slot.version += 1;
-            let subs = slot.subscribers.clone();
+            let subs: SmallVec<[SubscriberId; 8]> = slot.subscribers.iter().copied().collect();
             let batching = rt.batch_depth > 0;
             if batching {
                 rt.pending_batch_subscribers.extend(subs.iter().copied());
