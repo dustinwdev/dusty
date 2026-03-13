@@ -14,6 +14,10 @@ pub struct SubscriberId {
 }
 
 /// Register a subscriber callback in the runtime. Returns its ID.
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
 #[allow(dead_code)] // Used by effects/memos in Phase 3-4
 pub fn register_subscriber(callback: impl Fn() + 'static) -> Result<SubscriberId> {
     with_runtime_mut(|rt| {
@@ -66,6 +70,10 @@ pub fn invoke_subscriber(id: SubscriberId) -> Result<()> {
 /// Push a subscriber onto the tracking stack. While on the stack,
 /// any signal reads will register this subscriber as a dependent
 /// and record the read signals in the dependency stack.
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
 pub fn push_tracking(id: SubscriberId) -> Result<()> {
     with_runtime_mut(|rt| {
         rt.tracking_stack.push(id);
@@ -75,6 +83,10 @@ pub fn push_tracking(id: SubscriberId) -> Result<()> {
 
 /// Pop the current subscriber from the tracking stack.
 /// Returns the list of signals that were read during this tracking scope.
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
 pub fn pop_tracking() -> Result<Vec<SignalId>> {
     with_runtime_mut(|rt| {
         rt.tracking_stack.pop();

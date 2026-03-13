@@ -43,3 +43,9 @@ pub use scope::{create_child_scope, create_scope, dispose_scope, Scope};
 pub use signal::{
     create_signal, create_signal_split, dispose_signal, ReadSignal, Signal, WriteSignal,
 };
+
+/// Internal helpers exposed for benchmarking. Not part of the public API.
+#[doc(hidden)]
+pub mod bench_support {
+    pub use crate::subscriber::{pop_tracking, push_tracking, register_subscriber};
+}
