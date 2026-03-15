@@ -29,7 +29,10 @@ pub mod resource;
 pub(crate) mod runtime;
 pub mod scope;
 pub mod signal;
+#[cfg(feature = "devtools")]
+pub mod stats;
 pub(crate) mod subscriber;
+pub(crate) mod tracking;
 
 pub use batch::batch;
 pub use resource::{create_resource, dispose_resource, Resource, ResourceResolver, ResourceState};
@@ -39,7 +42,9 @@ pub use effect::{create_effect, dispose_effect, on_cleanup, Effect};
 pub use error::ReactiveError;
 pub use memo::{create_memo, dispose_memo, Memo};
 pub use runtime::{dispose_runtime, initialize_runtime};
-pub use scope::{create_child_scope, create_scope, dispose_scope, Scope};
+pub use scope::{
+    create_child_scope, create_scope, dispose_scope, provide_context, use_context, Scope,
+};
 pub use signal::{
     create_signal, create_signal_split, dispose_signal, ReadSignal, Signal, WriteSignal,
 };

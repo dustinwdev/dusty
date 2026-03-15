@@ -18,7 +18,6 @@ pub struct SubscriberId {
 /// # Errors
 ///
 /// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
-#[allow(dead_code)] // Used by effects/memos in Phase 3-4
 pub fn register_subscriber(callback: impl Fn() + 'static) -> Result<SubscriberId> {
     with_runtime_mut(|rt| {
         if let Some(index) = rt.subscriber_free_list.pop() {
@@ -44,7 +43,10 @@ pub fn register_subscriber(callback: impl Fn() + 'static) -> Result<SubscriberId
 /// If the generation doesn't match (slot already reused), this is a no-op.
 pub fn unregister_subscriber(id: SubscriberId) -> Result<()> {
     with_runtime_mut(|rt| {
-        if id.index < rt.subscribers.len() && rt.subscriber_generations[id.index] == id.generation {
+        if id.index < rt.subscribers.len()
+            && rt.subscriber_generations[id.index] == id.generation
+            && rt.subscribers[id.index].is_some()
+        {
             rt.subscribers[id.index] = None;
             rt.subscriber_free_list.push(id.index);
         }
@@ -77,7 +79,7 @@ pub fn invoke_subscriber(id: SubscriberId) -> Result<()> {
 pub fn push_tracking(id: SubscriberId) -> Result<()> {
     with_runtime_mut(|rt| {
         rt.tracking_stack.push(id);
-        rt.dependency_stack.push(Vec::new());
+        rt.dependency_stack.push(std::collections::HashSet::new());
     })
 }
 
@@ -89,8 +91,15 @@ pub fn push_tracking(id: SubscriberId) -> Result<()> {
 /// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
 pub fn pop_tracking() -> Result<Vec<SignalId>> {
     with_runtime_mut(|rt| {
-        rt.tracking_stack.pop();
-        rt.dependency_stack.pop().unwrap_or_default()
+        let popped_tracker = rt.tracking_stack.pop();
+        let popped_deps = rt.dependency_stack.pop();
+        debug_assert!(
+            popped_tracker.is_some() && popped_deps.is_some(),
+            "pop_tracking called with empty tracking stack"
+        );
+        popped_deps
+            .map(|set| set.into_iter().collect())
+            .unwrap_or_default()
     })
 }
 
@@ -144,13 +153,8 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
+    use crate::runtime::dispose_runtime;
+    use crate::tracking::with_test_runtime;
 
     #[test]
     fn register_subscriber_returns_id() {
@@ -185,18 +189,41 @@ mod tests {
         with_test_runtime(|| {
             let id = register_subscriber(|| {}).unwrap();
             unregister_subscriber(id).unwrap();
-            // Second unregister is a no-op (generation already advanced on reuse)
-            // but even without reuse, generation still matches — we just
-            // need to ensure no double push to free list
+            // Second unregister must be a no-op — the is_some() guard prevents
+            // pushing the same index to the free list twice.
             unregister_subscriber(id).unwrap();
 
-            // Register two new subscribers — should get distinct slots
-            let id1 = register_subscriber(|| {}).unwrap();
-            let id2 = register_subscriber(|| {}).unwrap();
-            // id1 reuses slot 0 (from first unregister) and slot 0 again
-            // (from second unregister). This test verifies we don't panic
-            // and the runtime stays usable.
-            assert!(id1.index != id2.index || id1.generation != id2.generation);
+            // Register two new subscribers — they MUST get distinct slots.
+            // Without the is_some() guard, the free list would contain index 0
+            // twice, causing both registrations to get the same slot.
+            let counter1 = std::rc::Rc::new(std::cell::Cell::new(0));
+            let counter2 = std::rc::Rc::new(std::cell::Cell::new(0));
+            let c1 = std::rc::Rc::clone(&counter1);
+            let c2 = std::rc::Rc::clone(&counter2);
+
+            let id1 = register_subscriber(move || {
+                c1.set(c1.get() + 1);
+            })
+            .unwrap();
+            let id2 = register_subscriber(move || {
+                c2.set(c2.get() + 1);
+            })
+            .unwrap();
+
+            // Slots must be distinct
+            assert_ne!(
+                id1.index, id2.index,
+                "double unregister corrupted free list: both registrations got the same slot"
+            );
+
+            // Both callbacks must invoke independently
+            invoke_subscriber(id1).unwrap();
+            assert_eq!(counter1.get(), 1);
+            assert_eq!(counter2.get(), 0);
+
+            invoke_subscriber(id2).unwrap();
+            assert_eq!(counter1.get(), 1);
+            assert_eq!(counter2.get(), 1);
         });
     }
 

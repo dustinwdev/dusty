@@ -16,6 +16,8 @@
 //! # dusty_reactive::dispose_runtime();
 //! ```
 
+use std::any::TypeId;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use crate::error::{ReactiveError, Result};
@@ -99,6 +101,76 @@ pub fn create_child_scope(parent: Scope, f: impl FnOnce(Scope)) -> Result<Scope>
 /// Returns [`ReactiveError::ScopeDisposed`] if the scope was already disposed.
 pub fn dispose_scope(scope: Scope) -> Result<()> {
     dispose_scope_inner(scope.id)
+}
+
+/// Store a value in the current scope's context, keyed by its [`TypeId`].
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::ScopeDisposed`] if no scope is currently active.
+///
+/// # Examples
+///
+/// ```
+/// # dusty_reactive::initialize_runtime();
+/// let _scope = dusty_reactive::create_scope(|_s| {
+///     dusty_reactive::provide_context(42_i32).unwrap();
+///     let val = dusty_reactive::use_context::<i32>().unwrap();
+///     assert_eq!(val, Some(42));
+/// }).unwrap();
+/// # dusty_reactive::dispose_runtime();
+/// ```
+pub fn provide_context<T: 'static>(value: T) -> Result<()> {
+    let scope_id = current_scope()?;
+    let id = scope_id.ok_or(ReactiveError::ScopeDisposed)?;
+    with_runtime_mut(|rt| {
+        let slot = &mut rt.scopes[id.index];
+        if slot.alive && slot.generation == id.generation {
+            slot.contexts.insert(TypeId::of::<T>(), Box::new(value));
+        }
+    })
+}
+
+/// Walk up the scope tree from the current scope, returning the first value
+/// of type `T` found (cloned). Returns `Ok(None)` if no scope is active or
+/// no value of type `T` exists in any ancestor scope.
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
+///
+/// # Examples
+///
+/// ```
+/// # dusty_reactive::initialize_runtime();
+/// let _scope = dusty_reactive::create_scope(|_s| {
+///     dusty_reactive::provide_context("hello".to_string()).unwrap();
+///     let val = dusty_reactive::use_context::<String>().unwrap();
+///     assert_eq!(val.as_deref(), Some("hello"));
+/// }).unwrap();
+/// # dusty_reactive::dispose_runtime();
+/// ```
+pub fn use_context<T: Clone + 'static>() -> Result<Option<T>> {
+    with_runtime(|rt| {
+        let mut scope_id = rt.scope_stack.last().copied();
+        while let Some(id) = scope_id {
+            if let Some(slot) = rt.scopes.get(id.index) {
+                if slot.alive && slot.generation == id.generation {
+                    if let Some(value) = slot.contexts.get(&TypeId::of::<T>()) {
+                        if let Some(val) = value.downcast_ref::<T>() {
+                            return Some(val.clone());
+                        }
+                    }
+                    scope_id = slot.parent;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        None
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +272,7 @@ fn alloc_scope(parent: Option<ScopeId>) -> Result<ScopeId> {
                 parent,
                 children: Vec::new(),
                 disposers: Vec::new(),
+                contexts: HashMap::new(),
             };
             ScopeId { index, generation }
         } else {
@@ -210,6 +283,7 @@ fn alloc_scope(parent: Option<ScopeId>) -> Result<ScopeId> {
                 parent,
                 children: Vec::new(),
                 disposers: Vec::new(),
+                contexts: HashMap::new(),
             });
             ScopeId {
                 index,
@@ -262,6 +336,7 @@ fn dispose_scope_inner(id: ScopeId) -> Result<()> {
         let parent = rt.scopes[id.index].parent;
         rt.scopes[id.index].alive = false;
         rt.scopes[id.index].children.clear();
+        rt.scopes[id.index].contexts.clear();
         rt.scope_free_list.push(id.index);
 
         if let Some(parent_id) = parent {
@@ -281,18 +356,12 @@ fn dispose_scope_inner(id: ScopeId) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
+    use crate::tracking::with_test_runtime;
     use static_assertions::assert_not_impl_any;
     use std::cell::Cell;
     use std::rc::Rc;
 
     assert_not_impl_any!(Scope: Send, Sync);
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
 
     #[test]
     fn create_scope_and_access() {
@@ -552,6 +621,99 @@ mod tests {
             })
             .unwrap();
             dispose_scope(new_scope).unwrap();
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Context API tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn provide_and_use_context_same_scope() {
+        with_test_runtime(|| {
+            let _scope = create_scope(|_s| {
+                provide_context(42_i32).unwrap();
+                let val = use_context::<i32>().unwrap();
+                assert_eq!(val, Some(42));
+            })
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn use_context_walks_up_to_parent() {
+        with_test_runtime(|| {
+            let _scope = create_scope(|p| {
+                provide_context(42_i32).unwrap();
+                let _child = create_child_scope(p, |_c| {
+                    let val = use_context::<i32>().unwrap();
+                    assert_eq!(val, Some(42));
+                })
+                .unwrap();
+            })
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn use_context_walks_multiple_levels() {
+        with_test_runtime(|| {
+            let _scope = create_scope(|p| {
+                provide_context("root".to_string()).unwrap();
+                let _child = create_child_scope(p, |c| {
+                    let _grandchild = create_child_scope(c, |_gc| {
+                        let val = use_context::<String>().unwrap();
+                        assert_eq!(val, Some("root".to_string()));
+                    })
+                    .unwrap();
+                })
+                .unwrap();
+            })
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn child_context_overrides_parent() {
+        with_test_runtime(|| {
+            let _scope = create_scope(|p| {
+                provide_context(42_i32).unwrap();
+                let _child = create_child_scope(p, |_c| {
+                    provide_context(99_i32).unwrap();
+                    let val = use_context::<i32>().unwrap();
+                    assert_eq!(val, Some(99));
+                })
+                .unwrap();
+            })
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn use_context_missing_type_returns_none() {
+        with_test_runtime(|| {
+            let _scope = create_scope(|_s| {
+                provide_context(42_i32).unwrap();
+                let val = use_context::<String>().unwrap();
+                assert_eq!(val, None);
+            })
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn provide_context_without_scope_returns_error() {
+        with_test_runtime(|| {
+            let result = provide_context(42_i32);
+            assert_eq!(result.unwrap_err(), ReactiveError::ScopeDisposed);
+        });
+    }
+
+    #[test]
+    fn use_context_without_scope_returns_none() {
+        with_test_runtime(|| {
+            let val = use_context::<i32>().unwrap();
+            assert_eq!(val, None);
         });
     }
 

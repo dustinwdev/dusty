@@ -69,12 +69,12 @@ Crate: `dusty-reactive`
 
 Crate: `dusty-core`
 
-- [ ] `View` trait — core abstraction every renderable implements
-- [ ] `Node` enum — text, element, component, fragment
-- [ ] `Element` — tag/type, props, style, children, event handlers
-- [ ] `ViewSeq` trait — heterogeneous collections of views (tuples, Vec, Option)
-- [ ] Tree construction helpers
-- [ ] Tests: build simple trees, ViewSeq flattening, Option<View> renders or skips
+- [x] `View` trait — core abstraction every renderable implements
+- [x] `Node` enum — text, element, component, fragment
+- [x] `Element` — tag/type, props, style, children, event handlers
+- [x] `ViewSeq` trait — heterogeneous collections of views (tuples, Vec, Option)
+- [x] Tree construction helpers
+- [x] Tests: build simple trees, ViewSeq flattening, Option<View> renders or skips
 
 ---
 
@@ -82,11 +82,11 @@ Crate: `dusty-core`
 
 Crate: `dusty-core`
 
-- [ ] Core event types: Click, Hover, KeyDown, KeyUp, Focus, Blur, Scroll, TextInput
-- [ ] `EventHandler<E>` type — type-safe callback wrapper
-- [ ] Event propagation model: bubble by default, stop propagation
-- [ ] `on_click()`, `on_hover()`, etc. — builder methods on elements
-- [ ] Tests: handler invocation, propagation stops, event data correctness
+- [x] Core event types: Click, Hover, KeyDown, KeyUp, Focus, Blur, Scroll, TextInput
+- [x] `EventHandler<E>` type — type-safe callback wrapper
+- [x] Event propagation model: bubble by default, stop propagation
+- [x] `on_click()`, `on_hover()`, etc. — builder methods on elements
+- [x] Tests: handler invocation, propagation stops, event data correctness
 
 ---
 
@@ -94,11 +94,11 @@ Crate: `dusty-core`
 
 Crate: `dusty-style`
 
-- [ ] `Style` struct — all style properties (padding, margin, bg, fg, border, radius, shadow, font, etc.)
-- [ ] Style merge/cascade — later styles override earlier
-- [ ] Design tokens: `ColorScale` (50–950 per hue), `SpacingScale`, `RadiusScale`, `ShadowScale`
-- [ ] Default palette (Tailwind-inspired color system)
-- [ ] Tests: style merge precedence, token value correctness
+- [x] `Style` struct — all style properties (padding, margin, bg, fg, border, radius, shadow, font, etc.)
+- [x] Style merge/cascade — later styles override earlier
+- [x] Design tokens: `ColorScale` (50–950 per hue), `SpacingScale`, `RadiusScale`, `ShadowScale`
+- [x] Default palette (Tailwind-inspired color system)
+- [x] Tests: style merge precedence, token value correctness
 
 ---
 
@@ -106,12 +106,12 @@ Crate: `dusty-style`
 
 Crate: `dusty-style`
 
-- [ ] Utility builder methods: `.p()`, `.px()`, `.py()`, `.m()`, `.bg_blue()`, `.text_white()`, `.rounded_md()`, `.shadow_lg()`, `.font_bold()`, etc.
-- [ ] State modifiers: `.hover()`, `.focus()`, `.active()`, `.disabled()`
-- [ ] Conditional: `.when(bool, |s| s.foo())`, `.apply(fn)`
-- [ ] `Theme` struct — swappable token sets
-- [ ] Theme propagation via context
-- [ ] Tests: method chaining produces correct styles, hover/conditional, theme override
+- [x] Utility builder methods: `.p()`, `.px()`, `.py()`, `.m()`, `.bg_blue()`, `.text_white()`, `.rounded_md()`, `.shadow_lg()`, `.font_bold()`, etc.
+- [x] State modifiers: `.hover()`, `.focus()`, `.active()`, `.disabled()`
+- [x] Conditional: `.when(bool, |s| s.foo())`, `.apply(fn)`
+- [x] `Theme` struct — swappable token sets
+- [x] Theme propagation via context
+- [x] Tests: method chaining produces correct styles, hover/conditional, theme override
 
 ---
 
@@ -119,11 +119,11 @@ Crate: `dusty-style`
 
 Crate: `dusty-layout`
 
-- [ ] Taffy integration — convert Dusty styles to taffy styles
-- [ ] Layout computation: given a node tree + styles → position/size for each node
-- [ ] Flexbox: row, column, wrap, gap, align-items, justify-content
-- [ ] Sizing: fixed, percentage, min/max, flex-grow/shrink
-- [ ] Tests: row layout, column layout, nested flex, gap, alignment, wrapping
+- [x] Taffy integration — convert Dusty styles to taffy styles
+- [x] Layout computation: given a node tree + styles → position/size for each node
+- [x] Flexbox: row, column, wrap, gap, align-items, justify-content
+- [x] Sizing: fixed, percentage, min/max, flex-grow/shrink
+- [x] Tests: row layout, column layout, nested flex, gap, alignment, wrapping
 
 ---
 
@@ -131,11 +131,11 @@ Crate: `dusty-layout`
 
 Crate: `dusty-text`
 
-- [ ] cosmic-text integration — font database, shaping, layout
-- [ ] `TextLayout` — measure text given font/size/constraints
-- [ ] Line wrapping, truncation with ellipsis
-- [ ] Rich text spans (bold, italic, color per-range)
-- [ ] Tests: measurement accuracy, wrapping behavior, rich text spans
+- [x] cosmic-text integration — font database, shaping, layout
+- [x] `TextLayout` — measure text given font/size/constraints
+- [x] Line wrapping, truncation with ellipsis
+- [x] Rich text spans (bold, italic, color per-range)
+- [x] Tests: measurement accuracy, wrapping behavior, rich text spans
 
 ---
 
@@ -143,12 +143,12 @@ Crate: `dusty-text`
 
 Crate: `dusty-platform`
 
-- [ ] winit integration — create window, run event loop
-- [ ] Translate winit events → Dusty events (keyboard, mouse, resize, close)
-- [ ] Window config: title, size, min/max size, resizable, decorations
-- [ ] DPI/scale factor handling
-- [ ] Clipboard read/write
-- [ ] Tests: event translation, window config, scale factor math
+- [x] winit integration — create window, run event loop
+- [x] Translate winit events → Dusty events (keyboard, mouse, resize, close)
+- [x] Window config: title, size, min/max size, resizable, decorations
+- [x] DPI/scale factor handling
+- [x] Clipboard read/write
+- [x] Tests: event translation, window config, scale factor math
 
 ---
 
@@ -156,12 +156,12 @@ Crate: `dusty-platform`
 
 Crate: `dusty-render`
 
-- [ ] wgpu setup: instance, adapter, device, surface, swap chain
-- [ ] Render primitives: filled rect, rounded rect, bordered rect
-- [ ] Color rendering, gradient support
-- [ ] Shadow rendering
-- [ ] Scissor/clipping for overflow
-- [ ] Tests: primitive output verification, clipping correctness
+- [x] wgpu setup: instance, adapter, device, surface, swap chain
+- [x] Render primitives: filled rect, rounded rect, bordered rect
+- [x] Color rendering, gradient support
+- [x] Shadow rendering
+- [x] Scissor/clipping for overflow
+- [x] Tests: primitive output verification, clipping correctness
 
 ---
 
@@ -169,11 +169,11 @@ Crate: `dusty-render`
 
 Crate: `dusty-render`
 
-- [ ] Text rasterization pipeline: cosmic-text glyphs → texture atlas → GPU quads
-- [ ] Glyph cache — atlas management, eviction
-- [ ] Image rendering — decode, upload to GPU texture, draw
-- [ ] Render tree: walk node tree → emit draw commands
-- [ ] Tests: atlas allocation, cache eviction, render tree traversal order
+- [x] Text rasterization pipeline: cosmic-text glyphs → texture atlas → GPU quads
+- [x] Glyph cache — atlas management, eviction
+- [x] Image rendering — decode, upload to GPU texture, draw
+- [x] Render tree: walk node tree → emit draw commands
+- [x] Tests: atlas allocation, cache eviction, render tree traversal order
 
 ---
 
@@ -181,11 +181,11 @@ Crate: `dusty-render`
 
 Crate: `dusty-a11y`
 
-- [ ] accesskit integration — build accessibility tree from Dusty node tree
-- [ ] Role mapping: button → Button, text → StaticText, input → TextField, etc.
-- [ ] Labels, descriptions, states (focused, disabled, checked)
-- [ ] Live regions for dynamic content
-- [ ] Tests: tree generation correctness, role mapping, state updates
+- [x] accesskit integration — build accessibility tree from Dusty node tree
+- [x] Role mapping: button → Button, text → StaticText, input → TextField, etc.
+- [x] Labels, descriptions, states (focused, disabled, checked)
+- [x] Live regions for dynamic content
+- [x] Tests: tree generation correctness, role mapping, state updates
 
 ---
 
@@ -193,14 +193,14 @@ Crate: `dusty-a11y`
 
 Crate: `dusty-widgets`
 
-- [ ] `Text` — static and reactive text display
-- [ ] `Image` — image display with sizing modes (cover, contain, fill)
-- [ ] `Divider` — horizontal/vertical separator
-- [ ] `Spacer` — flexible space
-- [ ] `Canvas` — 2D drawing escape hatch (Frame API: paths, fills, strokes, transforms, text, images)
-- [ ] `Canvas` reactive integration — draw closure reads signals, caches geometry when deps unchanged
-- [ ] `Canvas` input — optional event handling for interactive canvases (click, drag, hover within bounds)
-- [ ] Tests: text reactivity, image sizing, divider orientation, canvas draw + reactive redraw + input
+- [x] `Text` — static and reactive text display
+- [x] `Image` — image display with sizing modes (cover, contain, fill)
+- [x] `Divider` — horizontal/vertical separator
+- [x] `Spacer` — flexible space
+- [x] `Canvas` — 2D drawing escape hatch (Frame API: paths, fills, strokes, transforms, text, images)
+- [x] `Canvas` reactive integration — draw closure reads signals, caches geometry when deps unchanged
+- [x] `Canvas` input — optional event handling for interactive canvases (click, drag, hover within bounds)
+- [x] Tests: text reactivity, image sizing, divider orientation, canvas draw + reactive redraw + input
 
 ---
 
@@ -208,11 +208,11 @@ Crate: `dusty-widgets`
 
 Crate: `dusty-widgets`
 
-- [ ] `Button` — click handling, disabled state, variants
-- [ ] `TextInput` — text entry, cursor, selection, placeholder
-- [ ] `Checkbox`, `Radio`, `Toggle` — boolean/choice inputs
-- [ ] `Slider` — range input
-- [ ] Tests: button click fires handler, input state management, checkbox toggle
+- [x] `Button` — click handling, disabled state, variants
+- [x] `TextInput` — text entry, cursor, selection, placeholder
+- [x] `Checkbox`, `Radio`, `Toggle` — boolean/choice inputs
+- [x] `Slider` — range input
+- [x] Tests: button click fires handler, input state management, checkbox toggle
 
 ---
 
@@ -220,12 +220,12 @@ Crate: `dusty-widgets`
 
 Crate: `dusty-widgets`
 
-- [ ] `ScrollView` — scrollable content area, scroll bars
-- [ ] `For` — keyed list reconciliation
-- [ ] `Show` / `Match` — conditional rendering
-- [ ] `ErrorBoundary` — catch component errors
-- [ ] `Suspense` — async loading fallback
-- [ ] Tests: scroll offset, keyed list diffing (add/remove/reorder), Show/Match toggles
+- [x] `ScrollView` — scrollable content area, scroll bars
+- [x] `For` — keyed list reconciliation
+- [x] `Show` / `Match` — conditional rendering
+- [x] `ErrorBoundary` — catch component errors
+- [x] `Suspense` — async loading fallback
+- [x] Tests: scroll offset, keyed list diffing (add/remove/reorder), Show/Match toggles
 
 ---
 
@@ -233,11 +233,11 @@ Crate: `dusty-widgets`
 
 Crate: `dusty-macros`
 
-- [ ] `#[component]` — generate prop builder from function signature
-- [ ] `#[prop(default)]`, `#[prop(optional)]`, `#[prop(into)]` attributes
-- [ ] `col![]`, `row![]` — layout container macros
-- [ ] `text!()`, `button!()` — widget construction macros
-- [ ] Tests: macro expansion correctness, compile-fail tests for bad usage
+- [x] `#[component]` — generate prop builder from function signature
+- [x] `#[prop(default)]`, `#[prop(optional)]`, `#[prop(into)]` attributes
+- [x] `col![]`, `row![]` — layout container macros
+- [x] `text!()`, `button!()` — widget construction macros
+- [x] Tests: macro expansion correctness, compile-fail tests for bad usage
 
 ---
 
@@ -245,10 +245,10 @@ Crate: `dusty-macros`
 
 Crate: `dusty`
 
-- [ ] Re-export all public APIs
-- [ ] `prelude` module — common imports
-- [ ] `dusty::app()` builder — window config, theme, root component, run
-- [ ] Integration test: minimal app compiles and boots
+- [x] Re-export all public APIs
+- [x] `prelude` module — common imports
+- [x] `dusty::app()` builder — window config, theme, root component, run
+- [x] Integration test: minimal app compiles and boots
 
 ---
 
@@ -256,18 +256,18 @@ Crate: `dusty`
 
 Crate: `dusty-devtools`
 
-- [ ] Element inspector — overlay showing node boundaries, styles, tree
-- [ ] Performance profiler — frame times, re-render counts per signal
-- [ ] Accessibility auditor — flag missing labels, roles
-- [ ] Feature-gated behind `devtools` cargo feature
+- [x] Element inspector — overlay showing node boundaries, styles, tree
+- [x] Performance profiler — frame times, re-render counts per signal
+- [x] Accessibility auditor — flag missing labels, roles
+- [x] Feature-gated behind `devtools` cargo feature
 
 ---
 
 ## Phase 22: Examples & Validation
 
-- [ ] Counter — minimal signal usage
-- [ ] Todo app — list, input, state management
-- [ ] Theme showcase — demonstrate theming and design tokens
-- [ ] Form — inputs, validation, submission
-- [ ] Dashboard — complex layout, multiple components, async data
-- [ ] Ensure all examples pass clippy, fmt, and run correctly
+- [x] Counter — minimal signal usage
+- [x] Todo app — list, input, state management
+- [x] Theme showcase — demonstrate theming and design tokens
+- [x] Form — inputs, validation, submission
+- [x] Dashboard — complex layout, multiple components, async data
+- [x] Ensure all examples pass clippy, fmt, and run correctly

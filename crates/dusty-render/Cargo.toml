@@ -6,5 +6,28 @@ license.workspace = true
 rust-version.workspace = true
 description = "Scene graph and GPU rendering for Dusty"
 
+[dependencies]
+wgpu = "24"
+bitflags = "2"
+bytemuck = "1"
+bytemuck_derive = "1"
+raw-window-handle = "0.6"
+dusty-style = { path = "../dusty-style" }
+dusty-core = { path = "../dusty-core" }
+dusty-layout = { path = "../dusty-layout" }
+dusty-text = { path = "../dusty-text" }
+dusty-widgets = { path = "../dusty-widgets" }
+cosmic-text = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"], optional = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+pollster = "0.4"
+dusty-reactive = { path = "../dusty-reactive" }
+
+[features]
+default = []
+image = ["dep:image"]
+
 [lints]
 workspace = true

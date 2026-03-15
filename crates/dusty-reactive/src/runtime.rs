@@ -1,14 +1,18 @@
 //! Thread-local reactive runtime with arena-allocated signal storage.
 
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use crate::error::{ReactiveError, Result};
 use crate::subscriber::SubscriberId;
 
+/// A freshener function that ensures a memo's backing signal is up-to-date.
+pub type FreshenerFn = Rc<dyn Fn() -> Result<()>>;
+
 /// Generational index into the signal slab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SignalId {
     pub index: usize,
     pub generation: u64,
@@ -26,7 +30,7 @@ pub struct SignalSlot {
 }
 
 /// Generational index into the scope slab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeId {
     pub index: usize,
     pub generation: u64,
@@ -39,6 +43,7 @@ pub struct ScopeSlot {
     pub parent: Option<ScopeId>,
     pub children: Vec<ScopeId>,
     pub disposers: Vec<Box<dyn FnOnce()>>,
+    pub contexts: HashMap<TypeId, Box<dyn Any>>,
 }
 
 /// The reactive runtime. Holds all signal data for a single thread.
@@ -51,12 +56,15 @@ pub struct Runtime {
     pub tracking_stack: Vec<SubscriberId>,
     /// Parallel stack tracking which signals are read during each tracking scope.
     /// Each entry corresponds to the same index in `tracking_stack`.
-    pub dependency_stack: Vec<Vec<SignalId>>,
+    /// Uses `HashSet` for O(1) dedup on signal reads.
+    pub dependency_stack: Vec<HashSet<SignalId>>,
     pub scopes: Vec<ScopeSlot>,
     pub scope_free_list: Vec<usize>,
     pub scope_stack: Vec<ScopeId>,
     pub batch_depth: usize,
     pub pending_batch_subscribers: HashSet<SubscriberId>,
+    /// Maps signal slot index to a freshener closure for memo-backed slots.
+    pub fresheners: HashMap<usize, FreshenerFn>,
 }
 
 impl Runtime {
@@ -74,6 +82,7 @@ impl Runtime {
             scope_stack: Vec::new(),
             batch_depth: 0,
             pending_batch_subscribers: HashSet::new(),
+            fresheners: HashMap::new(),
         }
     }
 }
@@ -95,6 +104,7 @@ thread_local! {
 /// dusty_reactive::dispose_runtime();
 /// ```
 pub fn initialize_runtime() {
+    dispose_runtime();
     RUNTIME.with(|rt| {
         *rt.borrow_mut() = Some(Runtime::new());
     });
@@ -109,7 +119,6 @@ pub fn dispose_runtime() {
     RUNTIME.with(|rt| {
         *rt.borrow_mut() = None;
     });
-    crate::memo::clear_fresheners();
     crate::effect::clear_thread_locals();
 }
 
@@ -185,6 +194,28 @@ mod tests {
         initialize_runtime();
         let count = with_runtime(|rt| rt.signals.len()).unwrap();
         assert_eq!(count, 0);
+        dispose_runtime();
+    }
+
+    #[test]
+    fn reinitialize_clears_stale_fresheners() {
+        // Create signals/memos, re-initialize, verify no stale fresheners interfere.
+        initialize_runtime();
+        let sig = crate::signal::create_signal(10).unwrap();
+        let _memo = crate::memo::create_memo(move || sig.get().unwrap() * 2).unwrap();
+
+        // Re-initialize: should call dispose_runtime() first, clearing fresheners
+        initialize_runtime();
+
+        // Create a new signal and verify operations work cleanly
+        let sig2 = crate::signal::create_signal(5).unwrap();
+        sig2.set(7).unwrap();
+        assert_eq!(sig2.get().unwrap(), 7);
+
+        // Creating a new memo should also work without stale freshener interference
+        let memo2 = crate::memo::create_memo(move || sig2.get().unwrap() + 1).unwrap();
+        assert_eq!(memo2.get().unwrap(), 8);
+
         dispose_runtime();
     }
 

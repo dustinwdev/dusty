@@ -6,5 +6,11 @@ license.workspace = true
 rust-version.workspace = true
 description = "View trait, node types, and events for Dusty"
 
+[dependencies]
+dusty-reactive = { path = "../dusty-reactive" }
+
+[dev-dependencies]
+static_assertions = { workspace = true }
+
 [lints]
 workspace = true

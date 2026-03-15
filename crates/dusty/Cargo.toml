@@ -6,5 +6,21 @@ license.workspace = true
 rust-version.workspace = true
 description = "Reactive, declarative GUI framework for Rust"
 
+[dependencies]
+dusty-reactive = { path = "../dusty-reactive" }
+dusty-core = { path = "../dusty-core" }
+dusty-style = { path = "../dusty-style" }
+dusty-layout = { path = "../dusty-layout" }
+dusty-widgets = { path = "../dusty-widgets" }
+dusty-text = { path = "../dusty-text" }
+dusty-a11y = { path = "../dusty-a11y" }
+dusty-render = { path = "../dusty-render" }
+dusty-platform = { path = "../dusty-platform" }
+dusty-macros = { path = "../dusty-macros" }
+dusty-devtools = { path = "../dusty-devtools", optional = true }
+
+[features]
+devtools = ["dep:dusty-devtools", "dusty-reactive/devtools"]
+
 [lints]
 workspace = true

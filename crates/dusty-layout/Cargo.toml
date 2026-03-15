@@ -8,3 +8,12 @@ description = "Flexbox layout engine for Dusty"
 
 [lints]
 workspace = true
+
+[dependencies]
+dusty-core = { path = "../dusty-core" }
+dusty-style = { path = "../dusty-style" }
+smallvec = "1"
+taffy = "0.9"
+
+[dev-dependencies]
+dusty-reactive = { path = "../dusty-reactive" }

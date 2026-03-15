@@ -264,9 +264,7 @@ pub(crate) fn track_and_read<T: 'static, R>(id: SignalId, f: impl FnOnce(&T) -> 
                 }
             }
             if let Some(deps) = rt.dependency_stack.last_mut() {
-                if !deps.contains(&id) {
-                    deps.push(id);
-                }
+                deps.insert(id);
             }
         }
         // Read
@@ -298,13 +296,43 @@ pub(crate) fn track_signal(id: SignalId) -> Result<()> {
             }
             // Record this signal as a dependency of the current tracking scope
             if let Some(deps) = rt.dependency_stack.last_mut() {
-                if !deps.contains(&id) {
-                    deps.push(id);
-                }
+                deps.insert(id);
             }
         })?;
     }
     Ok(())
+}
+
+/// Replace the signal's value only if it differs from the current value
+/// (via `PartialEq`). Returns `Ok(true)` if the value was changed and
+/// subscribers were notified, `Ok(false)` if it was unchanged.
+///
+/// # Errors
+///
+/// Returns an error if the runtime is unavailable or the signal is disposed.
+pub(crate) fn set_if_changed_and_notify<T: PartialEq + 'static>(
+    id: SignalId,
+    value: T,
+) -> Result<bool> {
+    let changed = with_runtime(|rt| -> std::result::Result<bool, ReactiveError> {
+        let slot = rt
+            .signals
+            .get(id.index)
+            .ok_or(ReactiveError::SignalDisposed)?;
+        if !slot.alive || slot.generation != id.generation {
+            return Err(ReactiveError::SignalDisposed);
+        }
+        let current = slot
+            .value
+            .downcast_ref::<T>()
+            .ok_or(ReactiveError::TypeMismatch)?;
+        Ok(*current != value)
+    })??;
+
+    if changed {
+        set_and_notify::<T>(id, move |v| *v = value)?;
+    }
+    Ok(changed)
 }
 
 /// Collect-then-notify pattern: set or update the value while holding a
@@ -338,11 +366,7 @@ pub(crate) fn set_and_notify<T: 'static>(id: SignalId, mutate: impl FnOnce(&mut 
 
     if !in_batch {
         // Phase 2: notify subscribers outside the mutable borrow.
-        // Each callback is invoked via an immutable borrow with a
-        // generation check to skip stale subscriber references.
-        for sub_id in subs {
-            crate::subscriber::invoke_subscriber(sub_id)?;
-        }
+        crate::tracking::notify_subscribers(subs)?;
 
         // Phase 3: flush any pending effects that were queued during notification.
         crate::effect::flush_pending_effects();
@@ -397,11 +421,28 @@ impl<T: 'static> ReadSignal<T> {
 impl<T: 'static> WriteSignal<T> {
     /// Replace the signal's value and notify all subscribers.
     ///
+    /// Always notifies subscribers even when the new value equals the old value.
+    /// Use [`set_if_changed`](Self::set_if_changed) to skip notification when unchanged.
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
     pub fn set(&self, value: T) -> Result<()> {
         set_and_notify::<T>(self.id, move |v| *v = value)
+    }
+
+    /// Replace the signal's value only if it differs from the current value
+    /// (via `PartialEq`). Returns `Ok(true)` if the value was changed and
+    /// subscribers were notified, `Ok(false)` if the value was unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the runtime is unavailable or the signal is disposed.
+    pub fn set_if_changed(&self, value: T) -> Result<bool>
+    where
+        T: PartialEq,
+    {
+        set_if_changed_and_notify(self.id, value)
     }
 
     /// Mutate the signal's value in place and notify all subscribers.
@@ -477,11 +518,28 @@ impl<T: 'static> Signal<T> {
 
     /// Replace the signal's value and notify subscribers.
     ///
+    /// Always notifies subscribers even when the new value equals the old value.
+    /// Use [`set_if_changed`](Self::set_if_changed) to skip notification when unchanged.
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
     pub fn set(&self, value: T) -> Result<()> {
         self.write().set(value)
+    }
+
+    /// Replace the signal's value only if it differs from the current value
+    /// (via `PartialEq`). Returns `Ok(true)` if the value was changed and
+    /// subscribers were notified, `Ok(false)` if the value was unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the runtime is unavailable or the signal is disposed.
+    pub fn set_if_changed(&self, value: T) -> Result<bool>
+    where
+        T: PartialEq,
+    {
+        self.write().set_if_changed(value)
     }
 
     /// Mutate the signal's value in place and notify subscribers.
@@ -501,7 +559,8 @@ impl<T: 'static> Signal<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
+    use crate::runtime::dispose_runtime;
+    use crate::tracking::with_test_runtime;
     use static_assertions::assert_not_impl_any;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -509,12 +568,6 @@ mod tests {
     assert_not_impl_any!(Signal<i32>: Send, Sync);
     assert_not_impl_any!(ReadSignal<i32>: Send, Sync);
     assert_not_impl_any!(WriteSignal<i32>: Send, Sync);
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
 
     // -- Creation + Read --
 
@@ -969,6 +1022,71 @@ mod tests {
             let user = sig.get().unwrap();
             assert_eq!(user.age, 31);
             assert_eq!(user.name, "Alice");
+        });
+    }
+
+    // -- set_if_changed --
+
+    #[test]
+    fn set_if_changed_skips_notification_for_same_value() {
+        with_test_runtime(|| {
+            let sig = create_signal(42).unwrap();
+            let count = Rc::new(Cell::new(0));
+            let count_clone = Rc::clone(&count);
+
+            let sub_id = crate::subscriber::register_subscriber(move || {
+                count_clone.set(count_clone.get() + 1);
+            })
+            .unwrap();
+
+            crate::runtime::with_runtime_mut(|rt| {
+                rt.signals[sig.read().id.index].subscribers.insert(sub_id);
+            })
+            .unwrap();
+
+            // Same value — should not notify, returns Ok(false)
+            let result = sig.set_if_changed(42).unwrap();
+            assert!(!result);
+            assert_eq!(count.get(), 0);
+
+            // Different value — should notify, returns Ok(true)
+            let result = sig.set_if_changed(99).unwrap();
+            assert!(result);
+            assert_eq!(count.get(), 1);
+
+            // Verify the value was updated
+            assert_eq!(sig.get().unwrap(), 99);
+        });
+    }
+
+    #[test]
+    fn set_if_changed_on_write_signal() {
+        with_test_runtime(|| {
+            let (read, write) = create_signal_split(10).unwrap();
+            let count = Rc::new(Cell::new(0));
+            let count_clone = Rc::clone(&count);
+
+            let sub_id = crate::subscriber::register_subscriber(move || {
+                count_clone.set(count_clone.get() + 1);
+            })
+            .unwrap();
+
+            crate::runtime::with_runtime_mut(|rt| {
+                rt.signals[read.id.index].subscribers.insert(sub_id);
+            })
+            .unwrap();
+
+            // Same value — no notification
+            let result = write.set_if_changed(10).unwrap();
+            assert!(!result);
+            assert_eq!(count.get(), 0);
+            assert_eq!(read.get().unwrap(), 10);
+
+            // Different value — notification fires
+            let result = write.set_if_changed(20).unwrap();
+            assert!(result);
+            assert_eq!(count.get(), 1);
+            assert_eq!(read.get().unwrap(), 20);
         });
     }
 }

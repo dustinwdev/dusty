@@ -8,3 +8,12 @@ description = "Windowing, input, and event loop for Dusty"
 
 [lints]
 workspace = true
+
+[dependencies]
+dusty-core = { path = "../dusty-core" }
+winit = "0.30"
+arboard = "3"
+
+[dev-dependencies]
+static_assertions = { workspace = true }
+proptest = { workspace = true }

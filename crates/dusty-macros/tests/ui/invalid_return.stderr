@@ -1,0 +1,13 @@
+error: #[component] function must return `-> Node`
+ --> tests/ui/invalid_return.rs:5:22
+  |
+5 | fn Bad(cx: Scope) -> String {
+  |                      ^^^^^^
+
+warning: unused import: `dusty_reactive::Scope`
+ --> tests/ui/invalid_return.rs:2:5
+  |
+2 | use dusty_reactive::Scope;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

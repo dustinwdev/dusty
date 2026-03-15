@@ -6,5 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 description = "Utility styling and theme engine for Dusty"
 
+[dependencies]
+dusty-reactive = { path = "../dusty-reactive" }
+
 [lints]
 workspace = true

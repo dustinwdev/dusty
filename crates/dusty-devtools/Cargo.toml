@@ -6,5 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 description = "Inspector and profiler for Dusty"
 
+[dependencies]
+dusty-core = { path = "../dusty-core" }
+dusty-style = { path = "../dusty-style" }
+dusty-layout = { path = "../dusty-layout" }
+dusty-a11y = { path = "../dusty-a11y" }
+dusty-reactive = { path = "../dusty-reactive", features = ["devtools"] }
+accesskit = { workspace = true }
+
 [lints]
 workspace = true

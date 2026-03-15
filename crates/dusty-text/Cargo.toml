@@ -8,3 +8,12 @@ description = "Text shaping and rendering for Dusty"
 
 [lints]
 workspace = true
+
+[dependencies]
+cosmic-text = { workspace = true }
+dusty-layout = { path = "../dusty-layout" }
+dusty-style = { path = "../dusty-style" }
+
+[dev-dependencies]
+dusty-core = { path = "../dusty-core" }
+dusty-reactive = { path = "../dusty-reactive" }

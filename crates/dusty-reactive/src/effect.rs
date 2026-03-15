@@ -24,20 +24,11 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use crate::error::{ReactiveError, Result};
-use crate::runtime::{with_runtime, with_runtime_mut, SignalId};
+use crate::runtime::SignalId;
 use crate::subscriber::{
     pop_tracking, push_tracking, register_subscriber, unregister_subscriber, SubscriberId,
 };
-
-// ---------------------------------------------------------------------------
-// Freshener lookup (shared with memo.rs)
-// ---------------------------------------------------------------------------
-
-type FreshenerFn = Rc<dyn Fn() -> Result<()>>;
-
-fn get_freshener(index: usize) -> Option<FreshenerFn> {
-    crate::memo::get_freshener_pub(index)
-}
+use crate::tracking::unsubscribe_from_signals;
 
 // ---------------------------------------------------------------------------
 // Dependency info
@@ -45,10 +36,6 @@ fn get_freshener(index: usize) -> Option<FreshenerFn> {
 
 struct DepInfo {
     signal_id: SignalId,
-    #[allow(dead_code)]
-    version: u64,
-    #[allow(dead_code)]
-    freshener: Option<FreshenerFn>,
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +140,7 @@ pub fn create_effect(f: impl Fn() + 'static) -> Result<Effect> {
     // Register disposer with current scope if any
     let state_for_scope = Rc::clone(&state);
     crate::scope::register_disposer(Box::new(move || {
+        // Best-effort: effect may already be disposed via explicit `dispose_effect` call
         let _ = dispose_effect_inner(&state_for_scope);
     }))?;
 
@@ -180,10 +168,12 @@ pub fn dispose_effect(effect: &Effect) -> Result<()> {
 /// If called outside of an effect, this is a no-op.
 pub fn on_cleanup(cleanup: impl FnOnce() + 'static) {
     CLEANUP_SINK.with(|sink| {
-        if let Ok(mut borrow) = sink.try_borrow_mut() {
-            if let Some(ref mut vec) = *borrow {
-                vec.push(Box::new(cleanup));
-            }
+        let Ok(mut borrow) = sink.try_borrow_mut() else {
+            debug_assert!(false, "CLEANUP_SINK already borrowed during on_cleanup");
+            return;
+        };
+        if let Some(ref mut vec) = *borrow {
+            vec.push(Box::new(cleanup));
         }
     });
 }
@@ -216,7 +206,9 @@ pub(crate) fn flush_pending_effects() {
 
         for state in pending {
             if !state.disposed.get() && state.dirty.get() {
-                let _ = execute_effect(&state);
+                if let Err(e) = execute_effect(&state) {
+                    debug_assert!(false, "effect execution failed during flush: {e}");
+                }
             }
         }
     }
@@ -236,6 +228,7 @@ fn execute_effect(state: &Rc<EffectInner>) -> Result<()> {
         return Ok(());
     }
     state.running.set(true);
+    state.dirty.set(false);
 
     // Run existing cleanups in reverse (LIFO)
     let old_cleanups = std::mem::take(&mut *state.cleanups.borrow_mut());
@@ -246,19 +239,15 @@ fn execute_effect(state: &Rc<EffectInner>) -> Result<()> {
     // Unsubscribe from old deps
     let old_deps = std::mem::take(&mut *state.deps.borrow_mut());
     let sub_id = state.subscriber_id;
-    for dep in &old_deps {
-        let _ = with_runtime_mut(|rt| {
-            if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
-                if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.remove(&sub_id);
-                }
-            }
-        });
-    }
+    unsubscribe_from_signals(sub_id, old_deps.iter().map(|d| d.signal_id));
 
-    // Set up cleanup sink
+    // Set up cleanup sink — reuse existing Vec if possible to avoid allocation
     CLEANUP_SINK.with(|sink| {
-        *sink.borrow_mut() = Some(Vec::new());
+        let mut borrow = sink.borrow_mut();
+        match borrow.as_mut() {
+            Some(vec) => vec.clear(),
+            None => *borrow = Some(Vec::new()),
+        }
     });
 
     // Push subscriber onto tracking stack, run f, pop
@@ -276,19 +265,11 @@ fn execute_effect(state: &Rc<EffectInner>) -> Result<()> {
     if let Err(payload) = f_result {
         state.disposed.set(true);
         state.running.set(false);
+        // Best-effort: subscriber may already be gone if runtime is shutting down
         let _ = unregister_subscriber(state.subscriber_id);
         // Unsubscribe from signals tracked during the partial execution
         if let Ok(ref signal_ids) = pop_result {
-            let sub_id = state.subscriber_id;
-            for sig_id in signal_ids {
-                let _ = with_runtime_mut(|rt| {
-                    if let Some(slot) = rt.signals.get_mut(sig_id.index) {
-                        if slot.alive && slot.generation == sig_id.generation {
-                            slot.subscribers.remove(&sub_id);
-                        }
-                    }
-                });
-            }
+            unsubscribe_from_signals(state.subscriber_id, signal_ids.iter().copied());
         }
         std::panic::resume_unwind(payload);
     }
@@ -297,24 +278,19 @@ fn execute_effect(state: &Rc<EffectInner>) -> Result<()> {
 
     // Capture new deps
     let new_signal_ids = pop_result?;
-    let new_deps: Vec<DepInfo> = with_runtime(|rt| {
-        new_signal_ids
-            .iter()
-            .map(|&id| {
-                let version = rt.signals.get(id.index).map_or(0, |slot| slot.version);
-                let freshener = get_freshener(id.index);
-                DepInfo {
-                    signal_id: id,
-                    version,
-                    freshener,
-                }
-            })
-            .collect()
-    })?;
+    let new_deps: Vec<DepInfo> = new_signal_ids
+        .iter()
+        .map(|&id| DepInfo { signal_id: id })
+        .collect();
     *state.deps.borrow_mut() = new_deps;
 
-    state.dirty.set(false);
     state.running.set(false);
+    if state.dirty.get() {
+        PENDING_EFFECTS.with(|pe| {
+            pe.borrow_mut().push(Rc::clone(state));
+        });
+        flush_pending_effects();
+    }
 
     Ok(())
 }
@@ -333,18 +309,10 @@ fn dispose_effect_inner(state: &EffectInner) -> Result<()> {
 
     // Unsubscribe from all deps
     let deps = std::mem::take(&mut *state.deps.borrow_mut());
-    let sub_id = state.subscriber_id;
-    for dep in &deps {
-        let _ = with_runtime_mut(|rt| {
-            if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
-                if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.remove(&sub_id);
-                }
-            }
-        });
-    }
+    unsubscribe_from_signals(state.subscriber_id, deps.iter().map(|d| d.signal_id));
 
-    let _ = unregister_subscriber(sub_id);
+    // Best-effort: subscriber slot may already be reclaimed during runtime disposal
+    let _ = unregister_subscriber(state.subscriber_id);
 
     Ok(())
 }
@@ -356,18 +324,12 @@ fn dispose_effect_inner(state: &EffectInner) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
     use crate::signal::create_signal;
+    use crate::tracking::with_test_runtime;
     use static_assertions::assert_not_impl_any;
     use std::cell::Cell;
 
     assert_not_impl_any!(Effect: Send, Sync);
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
 
     #[test]
     fn effect_runs_on_creation() {
@@ -590,7 +552,9 @@ mod tests {
             let run_count = Rc::new(Cell::new(0));
             let rc = Rc::clone(&run_count);
 
-            // Effect reads sig and writes to sig — should not infinite loop
+            // Effect reads sig and writes to sig — re-entrant writes during
+            // execution set dirty, and after the running guard is cleared the
+            // effect is re-queued and converges.
             let _effect = create_effect(move || {
                 let val = sig.get().unwrap();
                 rc.set(rc.get() + 1);
@@ -600,9 +564,10 @@ mod tests {
             })
             .unwrap();
 
-            // Should have run a bounded number of times, not infinite
-            assert!(run_count.get() < 200);
-            assert!(run_count.get() >= 1);
+            // Signal converges to 3
+            assert_eq!(sig.get().unwrap(), 3);
+            // Effect runs exactly 4 times: initial(0) + re-runs for 1, 2, 3
+            assert_eq!(run_count.get(), 4);
         });
     }
 

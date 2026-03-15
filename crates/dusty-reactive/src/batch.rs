@@ -42,7 +42,8 @@ impl Drop for BatchGuard {
             }
         });
         if let Ok(Some(subs)) = pending {
-            let _ = flush_batch(subs);
+            let result = flush_batch(subs);
+            debug_assert!(result.is_ok(), "flush_batch failed: {:?}", result.err());
         }
     }
 }
@@ -85,16 +86,11 @@ fn flush_batch(subs: HashSet<SubscriberId>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
+    use crate::runtime::dispose_runtime;
     use crate::signal::create_signal;
+    use crate::tracking::with_test_runtime;
     use std::cell::Cell;
     use std::rc::Rc;
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
 
     #[test]
     fn batch_returns_closure_value() {

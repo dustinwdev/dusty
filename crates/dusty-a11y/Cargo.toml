@@ -6,5 +6,14 @@ license.workspace = true
 rust-version.workspace = true
 description = "Accessibility tree integration for Dusty"
 
+[dependencies]
+dusty-core = { path = "../dusty-core" }
+dusty-style = { path = "../dusty-style" }
+dusty-layout = { path = "../dusty-layout" }
+accesskit = { workspace = true }
+
+[dev-dependencies]
+dusty-reactive = { path = "../dusty-reactive" }
+
 [lints]
 workspace = true

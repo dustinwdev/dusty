@@ -37,12 +37,7 @@ No implementation code without a test first. Tests ARE the spec.
 
 ### Checklists
 
-Every crate or significant feature gets a checklist in `docs/checklists/`. Workflow:
-
-1. Create checklist before writing code — define scope, API surface, test cases
-2. Work through items sequentially
-3. Mark items done with `[x]` as completed
-4. Update checklist as scope clarifies — they are living documents
+The primary build checklist (`docs/checklists/build.md`) tracks all phases of the project. Work through it sequentially, marking items `[x]` as completed. Separate checklists in `docs/checklists/` are only created for parallel workstreams (e.g., `audit-remediation.md`) that don't fit the main build sequence.
 
 ### Documentation
 
@@ -59,7 +54,7 @@ These are working documents for us, not public docs. Keep them practical and cur
 
 - `cargo fmt` — always, no exceptions
 - `cargo clippy -- -D warnings` — zero warnings
-- No `unwrap()` or `expect()` in library code — use `Result` with structured errors via `thiserror`
+- No `unwrap()` or `expect()` in library code — use `Result` with structured errors (manual `Display` + `Error` impls, no `thiserror`)
 - `unsafe` requires a `// SAFETY:` comment explaining the invariant
 - Public API items get doc comments; include a short example on key types/functions
 - Prefer `impl Trait` in argument position for ergonomic APIs

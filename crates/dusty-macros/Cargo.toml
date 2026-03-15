@@ -9,5 +9,17 @@ description = "Proc macros for Dusty components and widgets"
 [lib]
 proc-macro = true
 
+[dependencies]
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+dusty-reactive = { path = "../dusty-reactive" }
+dusty-core = { path = "../dusty-core" }
+dusty-style = { path = "../dusty-style" }
+dusty-widgets = { path = "../dusty-widgets" }
+trybuild = { version = "1", features = ["diff"] }
+
 [lints]
 workspace = true

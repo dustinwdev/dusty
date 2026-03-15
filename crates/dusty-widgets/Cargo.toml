@@ -6,5 +6,13 @@ license.workspace = true
 rust-version.workspace = true
 description = "Built-in widget library for Dusty"
 
+[dependencies]
+dusty-reactive = { path = "../dusty-reactive" }
+dusty-core = { path = "../dusty-core" }
+dusty-style = { path = "../dusty-style" }
+
+[dev-dependencies]
+static_assertions = { workspace = true }
+
 [lints]
 workspace = true

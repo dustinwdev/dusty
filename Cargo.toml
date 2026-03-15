@@ -18,7 +18,7 @@ members = [
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
-rust-version = "1.75"
+rust-version = "1.79"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -28,3 +28,7 @@ unwrap_used = "deny"
 expect_used = "deny"
 
 [workspace.dependencies]
+static_assertions = "1.1"
+cosmic-text = "0.18"
+accesskit = "0.17"
+proptest = "1"

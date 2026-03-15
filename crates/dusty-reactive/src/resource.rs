@@ -111,9 +111,9 @@ impl<T: 'static> Clone for Resource<T> {
 
 struct ResourceInner<T: 'static> {
     state_signal: Signal<ResourceState<T>>,
+    /// Kept alive to share generation tracking with resolvers via `Rc::clone`.
     #[allow(dead_code)]
     current_generation: Rc<Cell<u64>>,
-    #[allow(dead_code)]
     effect: RefCell<Option<Effect>>,
     disposed: Cell<bool>,
 }
@@ -143,20 +143,23 @@ where
     let effect = create_effect(move || {
         let source_val = source();
 
-        // Increment generation
-        let new_gen = gen.get() + 1;
-        gen.set(new_gen);
+        // Batch so that Loading + Ready/Errored coalesce into one notification.
+        let _ = crate::batch::batch(|| {
+            // Increment generation
+            let new_gen = gen.get().saturating_add(1);
+            gen.set(new_gen);
 
-        // Set to Loading
-        let _ = state_signal.set(ResourceState::Loading);
+            // Set to Loading
+            let _ = state_signal.set(ResourceState::Loading);
 
-        let resolver = ResourceResolver {
-            generation: new_gen,
-            state_signal,
-            current_generation: Rc::clone(&gen),
-        };
+            let resolver = ResourceResolver {
+                generation: new_gen,
+                state_signal,
+                current_generation: Rc::clone(&gen),
+            };
 
-        fetcher(source_val, resolver);
+            fetcher(source_val, resolver);
+        });
     })?;
 
     let inner = Rc::new(ResourceInner {
@@ -244,19 +247,14 @@ impl<T: Clone + PartialEq + 'static> Resource<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
+    use crate::runtime::dispose_runtime;
     use crate::signal::create_signal;
+    use crate::tracking::with_test_runtime;
     use static_assertions::assert_not_impl_any;
     use std::cell::Cell;
     use std::rc::Rc;
 
     assert_not_impl_any!(Resource<i32>: Send, Sync);
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
 
     #[test]
     fn resource_sync_fetcher_resolves_immediately() {

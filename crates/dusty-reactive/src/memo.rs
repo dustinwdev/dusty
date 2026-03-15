@@ -18,57 +18,34 @@
 //! ```
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 use smallvec::SmallVec;
 
 use crate::error::{ReactiveError, Result};
-use crate::runtime::{with_runtime, with_runtime_mut, SignalId};
+use crate::runtime::{with_runtime, with_runtime_mut, FreshenerFn, SignalId};
 use crate::signal::{create_signal_raw, track_signal, with_signal_value};
 use crate::subscriber::{
     invoke_subscriber, pop_tracking, push_tracking, register_subscriber, unregister_subscriber,
     SubscriberId,
 };
+use crate::tracking::unsubscribe_from_signals;
 
 // ---------------------------------------------------------------------------
-// Freshener registry — maps signal slot index to a closure that ensures the
-// backing memo is up-to-date. Plain signals have no entry.
+// Freshener registry helpers — stored in the Runtime
 // ---------------------------------------------------------------------------
-
-type FreshenerFn = Rc<dyn Fn() -> Result<()>>;
-type FreshenerMap = RefCell<HashMap<usize, FreshenerFn>>;
-
-thread_local! {
-    static FRESHENERS: FreshenerMap = RefCell::new(HashMap::new());
-}
 
 fn register_freshener(index: usize, f: FreshenerFn) {
-    FRESHENERS.with(|map| {
-        map.borrow_mut().insert(index, f);
+    let _ = with_runtime_mut(|rt| {
+        rt.fresheners.insert(index, f);
     });
 }
 
 fn unregister_freshener(index: usize) {
-    FRESHENERS.with(|map| {
-        map.borrow_mut().remove(&index);
+    let _ = with_runtime_mut(|rt| {
+        rt.fresheners.remove(&index);
     });
-}
-
-fn get_freshener(index: usize) -> Option<FreshenerFn> {
-    FRESHENERS.with(|map| map.borrow().get(&index).cloned())
-}
-
-/// Public accessor for the freshener registry, used by `effect.rs`.
-pub(crate) fn get_freshener_pub(index: usize) -> Option<FreshenerFn> {
-    get_freshener(index)
-}
-
-/// Clear the freshener registry. Called by `dispose_runtime` to prevent
-/// stale freshener closures from surviving across runtime re-initialization.
-pub(crate) fn clear_fresheners() {
-    FRESHENERS.with(|map| map.borrow_mut().clear());
 }
 
 // ---------------------------------------------------------------------------
@@ -131,9 +108,19 @@ impl<T: 'static> Clone for Memo<T> {
 struct MemoInner<T> {
     computation: Box<dyn Fn() -> T>,
     dirty: Rc<Cell<bool>>,
-    deps: RefCell<Vec<DepInfo>>,
+    deps: RefCell<SmallVec<[DepInfo; 4]>>,
     subscriber_id: SubscriberId,
+    signal_id: SignalId,
     disposed: Cell<bool>,
+}
+
+impl<T> Drop for MemoInner<T> {
+    fn drop(&mut self) {
+        // Clean up stale freshener entry if memo was dropped without explicit disposal
+        if !self.disposed.get() {
+            unregister_freshener(self.signal_id.index);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,8 +164,9 @@ where
     let state = Rc::new(MemoInner {
         computation: Box::new(f),
         dirty,
-        deps: RefCell::new(Vec::new()),
+        deps: RefCell::new(SmallVec::new()),
         subscriber_id,
+        signal_id,
         disposed: Cell::new(false),
     });
 
@@ -218,6 +206,10 @@ where
 /// notification), when `batch_depth` is 0. The generation check in
 /// `invoke_subscriber` ensures stale references are silently skipped.
 fn propagate_dirty(signal_id: SignalId) {
+    // INVARIANT: Subscribers are collected into a SmallVec under an immutable
+    // borrow (`with_runtime`), the borrow is released, THEN subscribers are
+    // invoked. This ordering is critical — inlining invocation into the borrow
+    // would cause a `RuntimeBorrowError` if any subscriber writes to a signal.
     let subs: std::result::Result<SmallVec<[SubscriberId; 8]>, _> = with_runtime(|rt| {
         rt.signals
             .get(signal_id.index)
@@ -254,15 +246,7 @@ pub fn dispose_memo<T: 'static>(memo: &Memo<T>) -> Result<()> {
 
     let deps = std::mem::take(&mut *memo.state.deps.borrow_mut());
     let sub_id = memo.state.subscriber_id;
-    for dep in deps {
-        let _ = with_runtime_mut(|rt| {
-            if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
-                if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.remove(&sub_id);
-                }
-            }
-        });
-    }
+    unsubscribe_from_signals(sub_id, deps.iter().map(|d| d.signal_id));
 
     let _ = unregister_subscriber(sub_id);
     unregister_freshener(memo.signal_id.index);
@@ -344,15 +328,7 @@ fn evaluate_memo<T: Clone + PartialEq + 'static>(
 ) -> Result<()> {
     let old_deps = std::mem::take(&mut *state.deps.borrow_mut());
     let sub_id = state.subscriber_id;
-    for dep in &old_deps {
-        with_runtime_mut(|rt| {
-            if let Some(slot) = rt.signals.get_mut(dep.signal_id.index) {
-                if slot.alive && slot.generation == dep.signal_id.generation {
-                    slot.subscribers.remove(&sub_id);
-                }
-            }
-        })?;
-    }
+    unsubscribe_from_signals(sub_id, old_deps.iter().map(|d| d.signal_id));
 
     push_tracking(sub_id)?;
 
@@ -368,12 +344,12 @@ fn evaluate_memo<T: Clone + PartialEq + 'static>(
 
     let new_signal_ids = pop_result?;
 
-    let new_deps: Vec<DepInfo> = with_runtime(|rt| {
+    let new_deps: SmallVec<[DepInfo; 4]> = with_runtime(|rt| {
         new_signal_ids
             .iter()
             .map(|&id| {
                 let version = rt.signals.get(id.index).map_or(0, |slot| slot.version);
-                let freshener = get_freshener(id.index);
+                let freshener = rt.fresheners.get(&id.index).cloned();
                 DepInfo {
                     signal_id: id,
                     version,
@@ -388,23 +364,20 @@ fn evaluate_memo<T: Clone + PartialEq + 'static>(
         opt.as_ref().map_or(true, |old| *old != new_value)
     })?;
 
-    if changed {
-        update_and_notify::<T>(signal_id, new_value)?;
-    } else {
-        update_without_notify::<T>(signal_id, new_value)?;
-    }
+    update_memo_slot::<T>(signal_id, new_value, changed)?;
 
     state.dirty.set(false);
     Ok(())
 }
 
-/// Update the signal slot value, bump version, and notify downstream.
+/// Update the signal slot value, optionally bumping version and notifying downstream.
 ///
-/// Batch-aware: if `batch_depth > 0`, subscribers are queued to
-/// `pending_batch_subscribers` instead of being invoked immediately.
-fn update_and_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()> {
-    let (subs, in_batch) = with_runtime_mut(
-        |rt| -> std::result::Result<(SmallVec<[SubscriberId; 8]>, bool), ReactiveError> {
+/// When `notify` is true, this is batch-aware: if `batch_depth > 0`, subscribers
+/// are queued to `pending_batch_subscribers` instead of being invoked immediately.
+#[allow(clippy::type_complexity)]
+fn update_memo_slot<T: 'static>(signal_id: SignalId, new_value: T, notify: bool) -> Result<()> {
+    let maybe_subs = with_runtime_mut(
+        |rt| -> std::result::Result<Option<(SmallVec<[SubscriberId; 8]>, bool)>, ReactiveError> {
             let slot = rt
                 .signals
                 .get_mut(signal_id.index)
@@ -418,42 +391,26 @@ fn update_and_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()
                 .downcast_mut::<Option<T>>()
                 .ok_or(ReactiveError::TypeMismatch)?;
             *value = Some(new_value);
-            slot.version += 1;
-            let subs: SmallVec<[SubscriberId; 8]> = slot.subscribers.iter().copied().collect();
-            let batching = rt.batch_depth > 0;
-            if batching {
-                rt.pending_batch_subscribers.extend(subs.iter().copied());
+            if notify {
+                slot.version += 1;
+                let subs: SmallVec<[SubscriberId; 8]> = slot.subscribers.iter().copied().collect();
+                let batching = rt.batch_depth > 0;
+                if batching {
+                    rt.pending_batch_subscribers.extend(subs.iter().copied());
+                }
+                Ok(Some((subs, batching)))
+            } else {
+                Ok(None)
             }
-            Ok((subs, batching))
         },
     )??;
 
-    if !in_batch {
-        for ds in subs {
-            invoke_subscriber(ds)?;
+    if let Some((subs, in_batch)) = maybe_subs {
+        if !in_batch {
+            crate::tracking::notify_subscribers(subs)?;
         }
     }
     Ok(())
-}
-
-/// Update the signal slot value without bumping version or notifying.
-fn update_without_notify<T: 'static>(signal_id: SignalId, new_value: T) -> Result<()> {
-    with_runtime_mut(|rt| -> std::result::Result<(), ReactiveError> {
-        let slot = rt
-            .signals
-            .get_mut(signal_id.index)
-            .ok_or(ReactiveError::MemoDisposed)?;
-        if !slot.alive || slot.generation != signal_id.generation {
-            return Err(ReactiveError::MemoDisposed);
-        }
-        // TypeMismatch should be unreachable through the safe API.
-        let value = slot
-            .value
-            .downcast_mut::<Option<T>>()
-            .ok_or(ReactiveError::TypeMismatch)?;
-        *value = Some(new_value);
-        Ok(())
-    })?
 }
 
 // ---------------------------------------------------------------------------
@@ -526,18 +483,13 @@ const fn to_memo_error(e: ReactiveError) -> ReactiveError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{dispose_runtime, initialize_runtime};
+    use crate::runtime::dispose_runtime;
     use crate::signal::create_signal;
+    use crate::tracking::with_test_runtime;
     use static_assertions::assert_not_impl_any;
     use std::cell::Cell;
 
     assert_not_impl_any!(Memo<i32>: Send, Sync);
-
-    fn with_test_runtime(f: impl FnOnce()) {
-        initialize_runtime();
-        f();
-        dispose_runtime();
-    }
 
     // -- Step 2: Basic memo creation and read --
 
