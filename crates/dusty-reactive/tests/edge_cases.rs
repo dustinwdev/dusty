@@ -21,10 +21,9 @@ fn effect_creates_signal_during_execution() {
         let c = Rc::clone(&created);
 
         let _effect = create_effect(move || {
-            let _inner_sig = create_signal(42).unwrap();
+            let _inner_sig = create_signal(42);
             c.set(true);
-        })
-        .unwrap();
+        });
 
         assert!(created.get());
     });
@@ -38,20 +37,18 @@ fn effect_creates_effect_during_execution() {
         let or = Rc::clone(&outer_ran);
         let ir = Rc::clone(&inner_ran);
 
-        let sig = create_signal(0).unwrap();
+        let sig = create_signal(0);
 
         let _outer = create_effect(move || {
-            let _val = sig.get().unwrap();
+            let _val = sig.get();
             or.set(or.get() + 1);
             if or.get() == 1 {
                 let ir2 = Rc::clone(&ir);
                 let _inner = create_effect(move || {
                     ir2.set(ir2.get() + 1);
-                })
-                .unwrap();
+                });
             }
-        })
-        .unwrap();
+        });
 
         assert_eq!(outer_ran.get(), 1);
         assert_eq!(inner_ran.get(), 1);
@@ -65,20 +62,20 @@ fn effect_creates_effect_during_execution() {
 #[test]
 fn memo_handles_disposed_dependency_gracefully() {
     with_runtime(|| {
-        let sig = create_signal(10).unwrap();
-        let memo = create_memo(move || sig.get().unwrap_or(-1) * 2).unwrap();
+        let sig = create_signal(10);
+        let memo = create_memo(move || sig.try_get().unwrap_or(-1) * 2);
 
-        assert_eq!(memo.get().unwrap(), 20);
+        assert_eq!(memo.get(), 20);
 
         // Dispose the signal out from under the memo.
         // Signal disposal no longer unregisters shared subscribers (WS1B fix),
         // so the memo is not marked dirty and returns its cached value.
-        dispose_signal(sig).unwrap();
+        dispose_signal(sig);
 
         // Memo should still be queryable — returns the last cached value
         // since disposal does not trigger recomputation.
         let result = memo.get();
-        assert_eq!(result, Ok(20));
+        assert_eq!(result, 20);
     });
 }
 
@@ -92,28 +89,25 @@ fn batch_inside_scope_coalesces_correctly() {
         let run_count = Rc::new(Cell::new(0));
 
         let _scope = create_scope(|_cx| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let rc = Rc::clone(&run_count);
 
             let _effect = create_effect(move || {
-                let _val = sig.get().unwrap();
+                let _val = sig.get();
                 rc.set(rc.get() + 1);
-            })
-            .unwrap();
+            });
 
             assert_eq!(run_count.get(), 1);
 
             batch(|| {
-                sig.set(1).unwrap();
-                sig.set(2).unwrap();
-                sig.set(3).unwrap();
-            })
-            .unwrap();
+                sig.set(1);
+                sig.set(2);
+                sig.set(3);
+            });
 
             // Only one additional run from the batch
             assert_eq!(run_count.get(), 2);
-        })
-        .unwrap();
+        });
     });
 }
 
@@ -124,25 +118,23 @@ fn batch_inside_scope_coalesces_correctly() {
 #[test]
 fn untrack_inside_batch_does_not_track() {
     with_runtime(|| {
-        let sig = create_signal(0).unwrap();
+        let sig = create_signal(0);
         let run_count = Rc::new(Cell::new(0));
         let rc = Rc::clone(&run_count);
 
         let _effect = create_effect(move || {
             batch(|| {
                 untrack(|| {
-                    let _val = sig.get().unwrap();
+                    let _val = sig.get();
                 });
-            })
-            .unwrap();
+            });
             rc.set(rc.get() + 1);
-        })
-        .unwrap();
+        });
 
         assert_eq!(run_count.get(), 1);
 
         // Signal change should NOT trigger re-run (read was untracked)
-        sig.set(1).unwrap();
+        sig.set(1);
         assert_eq!(run_count.get(), 1);
     });
 }
@@ -158,23 +150,23 @@ fn rapid_signal_create_dispose_does_not_corrupt() {
 
         // Create many signals
         for i in 0..100 {
-            handles.push(create_signal(i).unwrap());
+            handles.push(create_signal(i));
         }
 
         // Dispose every other one
         for i in (0..100).step_by(2) {
-            dispose_signal(handles[i]).unwrap();
+            dispose_signal(handles[i]);
         }
 
         // Remaining should still work
         for i in (1..100).step_by(2) {
-            assert_eq!(handles[i].get().unwrap(), i as i32);
+            assert_eq!(handles[i].get(), i as i32);
         }
 
         // Create new signals — should reuse slots
         for i in 0..50 {
-            let sig = create_signal(1000 + i).unwrap();
-            assert_eq!(sig.get().unwrap(), 1000 + i);
+            let sig = create_signal(1000 + i);
+            assert_eq!(sig.get(), 1000 + i);
         }
     });
 }
@@ -186,27 +178,25 @@ fn rapid_signal_create_dispose_does_not_corrupt() {
 #[test]
 fn signal_set_during_batch_flush_no_missed_notifications() {
     with_runtime(|| {
-        let sig_a = create_signal(0).unwrap();
-        let sig_b = create_signal(0).unwrap();
+        let sig_a = create_signal(0);
+        let sig_b = create_signal(0);
         let observed_b = Rc::new(Cell::new(0));
         let ob = Rc::clone(&observed_b);
 
         // Effect on sig_a writes to sig_b
         let _eff_a = create_effect(move || {
-            let val = sig_a.get().unwrap();
+            let val = sig_a.get();
             if val > 0 {
-                let _ = sig_b.set(val * 10);
+                sig_b.set(val * 10);
             }
-        })
-        .unwrap();
+        });
 
         // Effect on sig_b observes its value
         let _eff_b = create_effect(move || {
-            ob.set(sig_b.get().unwrap());
-        })
-        .unwrap();
+            ob.set(sig_b.get());
+        });
 
-        sig_a.set(5).unwrap();
+        sig_a.set(5);
         assert_eq!(observed_b.get(), 50);
     });
 }
@@ -222,10 +212,8 @@ fn dispose_runtime_with_active_cleanups() {
         let _effect = create_effect(move || {
             let cr2 = Rc::clone(&cr);
             on_cleanup(move || cr2.set(true));
-        })
-        .unwrap();
-    })
-    .unwrap();
+        });
+    });
 
     // Dispose runtime without explicit scope disposal
     // Cleanups are NOT guaranteed to run — runtime just drops everything
@@ -250,24 +238,24 @@ fn memo_with_panicking_partial_eq() {
             }
         }
 
-        let sig = create_signal(1i32).unwrap();
-        let memo = create_memo(move || PanicEq(sig.get().unwrap())).unwrap();
+        let sig = create_signal(1i32);
+        let memo = create_memo(move || PanicEq(sig.get()));
 
-        assert_eq!(memo.get().unwrap().0, 1);
+        assert_eq!(memo.get().0, 1);
 
-        sig.set(2).unwrap();
-        assert_eq!(memo.get().unwrap().0, 2);
+        sig.set(2);
+        assert_eq!(memo.get().0, 2);
 
         // Setting to 999 will cause PartialEq to panic during memo evaluation
-        sig.set(999).unwrap();
+        sig.set(999);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _ = memo.get();
         }));
         assert!(result.is_err());
 
         // Runtime should still be usable after the panic
-        let sig2 = create_signal(42).unwrap();
-        assert_eq!(sig2.get().unwrap(), 42);
+        let sig2 = create_signal(42);
+        assert_eq!(sig2.get(), 42);
     });
 }
 
@@ -278,13 +266,13 @@ fn multi_thread_independent_runtimes() {
         .map(|thread_id| {
             std::thread::spawn(move || {
                 initialize_runtime();
-                let sig = create_signal(thread_id * 100).unwrap();
-                let memo = create_memo(move || sig.get().unwrap() + 1).unwrap();
+                let sig = create_signal(thread_id * 100);
+                let memo = create_memo(move || sig.get() + 1);
 
-                assert_eq!(memo.get().unwrap(), thread_id * 100 + 1);
+                assert_eq!(memo.get(), thread_id * 100 + 1);
 
-                sig.set(thread_id * 200).unwrap();
-                assert_eq!(memo.get().unwrap(), thread_id * 200 + 1);
+                sig.set(thread_id * 200);
+                assert_eq!(memo.get(), thread_id * 200 + 1);
 
                 dispose_runtime();
             })
@@ -303,30 +291,28 @@ fn multi_thread_independent_runtimes() {
 #[test]
 fn resource_state_tracked_exact_run_count() {
     with_runtime(|| {
-        let source = create_signal(1).unwrap();
+        let source = create_signal(1);
         let resource = create_resource(
-            move || source.get().unwrap(),
-            |val, resolver| {
+            move || source.get(),
+            |val: i32, resolver: dusty_reactive::ResourceResolver<i32>| {
                 resolver.resolve(val);
             },
-        )
-        .unwrap();
+        );
 
         let run_count = Rc::new(Cell::new(0));
         let rc = Rc::clone(&run_count);
         let res = resource.clone();
 
         let _effect = create_effect(move || {
-            let _state = res.state().unwrap();
+            let _state = res.state();
             rc.set(rc.get() + 1);
-        })
-        .unwrap();
+        });
 
         // Initial run
         assert_eq!(run_count.get(), 1);
 
         // Change source — resource re-fetches, effect re-runs
-        source.set(2).unwrap();
+        source.set(2);
         assert_eq!(run_count.get(), 2);
     });
 }

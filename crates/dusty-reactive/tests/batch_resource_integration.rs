@@ -21,38 +21,36 @@ fn with_test_runtime(f: impl FnOnce()) {
 fn dispose_runtime_clears_thread_locals() {
     // Phase 1: populate all auxiliary thread-locals
     initialize_runtime();
-    let source = create_signal(1).unwrap();
-    let _memo = create_memo(move || source.get().unwrap() * 2).unwrap();
+    let source = create_signal(1);
+    let _memo = create_memo(move || source.get() * 2);
 
     let effect_ran = Rc::new(Cell::new(0));
     let er = Rc::clone(&effect_ran);
     let _effect = create_effect(move || {
-        let _val = source.get().unwrap();
+        let _val = source.get();
         er.set(er.get() + 1);
-    })
-    .unwrap();
+    });
     assert_eq!(effect_ran.get(), 1);
     dispose_runtime();
 
     // Phase 2: re-initialize and verify no stale state interferes
     initialize_runtime();
-    let source2 = create_signal(10).unwrap();
-    let memo2 = create_memo(move || source2.get().unwrap() + 1).unwrap();
+    let source2 = create_signal(10);
+    let memo2 = create_memo(move || source2.get() + 1);
 
-    assert_eq!(memo2.get().unwrap(), 11);
+    assert_eq!(memo2.get(), 11);
 
     let observed = Rc::new(Cell::new(0));
     let ob = Rc::clone(&observed);
     let memo2_for_effect = memo2.clone();
     let _effect2 = create_effect(move || {
-        ob.set(memo2_for_effect.get().unwrap());
-    })
-    .unwrap();
+        ob.set(memo2_for_effect.get());
+    });
     assert_eq!(observed.get(), 11);
 
-    source2.set(20).unwrap();
+    source2.set(20);
     assert_eq!(observed.get(), 21);
-    assert_eq!(memo2.get().unwrap(), 21);
+    assert_eq!(memo2.get(), 21);
     dispose_runtime();
 }
 
@@ -63,26 +61,25 @@ fn dispose_runtime_clears_thread_locals() {
 #[test]
 fn effect_untrack_does_not_create_dependency() {
     with_test_runtime(|| {
-        let a = create_signal(1).unwrap();
-        let b = create_signal(100).unwrap();
+        let a = create_signal(1);
+        let b = create_signal(100);
         let observed = Rc::new(Cell::new(0));
         let ob = Rc::clone(&observed);
 
         let _effect = create_effect(move || {
-            let va = a.get().unwrap();
-            let vb = untrack(|| b.get().unwrap());
+            let va = a.get();
+            let vb = untrack(|| b.get());
             ob.set(va + vb);
-        })
-        .unwrap();
+        });
 
         assert_eq!(observed.get(), 101);
 
         // Changing b should NOT re-run the effect (untracked)
-        b.set(200).unwrap();
+        b.set(200);
         assert_eq!(observed.get(), 101);
 
         // Changing a SHOULD re-run the effect (tracked)
-        a.set(2).unwrap();
+        a.set(2);
         // Effect reads b's current value (200) during re-run
         assert_eq!(observed.get(), 202);
     });
@@ -95,27 +92,25 @@ fn effect_untrack_does_not_create_dependency() {
 #[test]
 fn batch_effect_sees_final_values() {
     with_test_runtime(|| {
-        let a = create_signal(0).unwrap();
-        let b = create_signal(0).unwrap();
+        let a = create_signal(0);
+        let b = create_signal(0);
         let observed_a = Rc::new(Cell::new(0));
         let observed_b = Rc::new(Cell::new(0));
         let oa = Rc::clone(&observed_a);
         let ob = Rc::clone(&observed_b);
 
         let _effect = create_effect(move || {
-            oa.set(a.get().unwrap());
-            ob.set(b.get().unwrap());
-        })
-        .unwrap();
+            oa.set(a.get());
+            ob.set(b.get());
+        });
 
         assert_eq!(observed_a.get(), 0);
         assert_eq!(observed_b.get(), 0);
 
         batch(|| {
-            a.set(10).unwrap();
-            b.set(20).unwrap();
-        })
-        .unwrap();
+            a.set(10);
+            b.set(20);
+        });
 
         // Effect sees both final values together
         assert_eq!(observed_a.get(), 10);
@@ -126,28 +121,26 @@ fn batch_effect_sees_final_values() {
 #[test]
 fn batch_memo_chain_evaluated_once() {
     with_test_runtime(|| {
-        let source = create_signal(1).unwrap();
+        let source = create_signal(1);
         let eval_count = Rc::new(Cell::new(0));
         let ec = Rc::clone(&eval_count);
 
         let doubled = create_memo(move || {
             ec.set(ec.get() + 1);
-            source.get().unwrap() * 2
-        })
-        .unwrap();
+            source.get() * 2
+        });
 
-        assert_eq!(doubled.get().unwrap(), 2);
+        assert_eq!(doubled.get(), 2);
         assert_eq!(eval_count.get(), 1);
 
         batch(|| {
-            source.set(2).unwrap();
-            source.set(3).unwrap();
-            source.set(4).unwrap();
-        })
-        .unwrap();
+            source.set(2);
+            source.set(3);
+            source.set(4);
+        });
 
         // Memo should evaluate just once for the final value
-        assert_eq!(doubled.get().unwrap(), 8);
+        assert_eq!(doubled.get(), 8);
         assert_eq!(eval_count.get(), 2);
     });
 }
@@ -157,31 +150,29 @@ fn batch_memo_chain_evaluated_once() {
 #[test]
 fn batch_memo_read_inside_batch_defers_notification() {
     with_test_runtime(|| {
-        let source = create_signal(1).unwrap();
-        let doubled = create_memo(move || source.get().unwrap() * 2).unwrap();
+        let source = create_signal(1);
+        let doubled = create_memo(move || source.get() * 2);
         let doubled_for_batch = doubled.clone();
 
         let effect_count = Rc::new(Cell::new(0));
         let ec = Rc::clone(&effect_count);
 
         let _effect = create_effect(move || {
-            let _val = doubled.get().unwrap();
+            let _val = doubled.get();
             ec.set(ec.get() + 1);
-        })
-        .unwrap();
+        });
 
         assert_eq!(effect_count.get(), 1);
 
         batch(|| {
-            source.set(10).unwrap();
+            source.set(10);
             // Reading memo inside batch forces freshening
-            let val = doubled_for_batch.get().unwrap();
+            let val = doubled_for_batch.get();
             assert_eq!(val, 20);
 
             // Effect should NOT have re-run yet — still in the batch
             assert_eq!(effect_count.get(), 1);
-        })
-        .unwrap();
+        });
 
         // Effect should run exactly once after batch
         assert_eq!(effect_count.get(), 2);
@@ -195,30 +186,29 @@ fn batch_memo_read_inside_batch_defers_notification() {
 #[test]
 fn resource_with_derived_source() {
     with_test_runtime(|| {
-        let count = create_signal(3).unwrap();
-        let doubled = create_memo(move || count.get().unwrap() * 2).unwrap();
+        let count = create_signal(3);
+        let doubled = create_memo(move || count.get() * 2);
 
         let resource = create_resource(
-            move || doubled.get().unwrap(),
+            move || doubled.get(),
             |val, resolver| {
                 resolver.resolve(val + 1);
             },
-        )
-        .unwrap();
+        );
 
         // Source is memo: doubled = 6, resource = 7
-        assert_eq!(resource.get().unwrap(), Some(7));
+        assert_eq!(resource.get(), Some(7));
 
-        count.set(5).unwrap();
+        count.set(5);
         // doubled = 10, resource = 11
-        assert_eq!(resource.get().unwrap(), Some(11));
+        assert_eq!(resource.get(), Some(11));
     });
 }
 
 #[test]
 fn resource_in_scope_disposed_with_scope() {
     with_test_runtime(|| {
-        let source = create_signal(1).unwrap();
+        let source = create_signal(1);
         let fetch_count = Rc::new(Cell::new(0));
         let fc = Rc::clone(&fetch_count);
 
@@ -228,24 +218,22 @@ fn resource_in_scope_disposed_with_scope() {
         let scope = create_scope(|_s| {
             let fc2 = Rc::clone(&fc);
             let resource = create_resource(
-                move || source.get().unwrap(),
+                move || source.get(),
                 move |val, resolver| {
                     fc2.set(fc2.get() + 1);
                     resolver.resolve(val);
                 },
-            )
-            .unwrap();
+            );
             *rh.borrow_mut() = Some(resource);
-        })
-        .unwrap();
+        });
 
         assert_eq!(fetch_count.get(), 1);
 
         // Dispose scope — resource effect should be cleaned up
-        dispose_scope(scope).unwrap();
+        dispose_scope(scope);
 
         // Changing source should NOT trigger re-fetch
-        source.set(2).unwrap();
+        source.set(2);
         assert_eq!(fetch_count.get(), 1);
     });
 }
@@ -253,63 +241,59 @@ fn resource_in_scope_disposed_with_scope() {
 #[test]
 fn batch_with_resource() {
     with_test_runtime(|| {
-        let source = create_signal(1).unwrap();
+        let source = create_signal(1);
         let fetch_count = Rc::new(Cell::new(0));
         let fc = Rc::clone(&fetch_count);
 
         let resource = create_resource(
-            move || source.get().unwrap(),
+            move || source.get(),
             move |val, resolver| {
                 fc.set(fc.get() + 1);
                 resolver.resolve(val * 10);
             },
-        )
-        .unwrap();
+        );
 
         assert_eq!(fetch_count.get(), 1);
-        assert_eq!(resource.get().unwrap(), Some(10));
+        assert_eq!(resource.get(), Some(10));
 
         // Batch multiple source changes — should only trigger one re-fetch
         batch(|| {
-            source.set(2).unwrap();
-            source.set(3).unwrap();
-        })
-        .unwrap();
+            source.set(2);
+            source.set(3);
+        });
 
         // Resource re-fetched once with the final value
         assert_eq!(fetch_count.get(), 2);
-        assert_eq!(resource.get().unwrap(), Some(30));
+        assert_eq!(resource.get(), Some(30));
     });
 }
 
 #[test]
 fn resource_effect_chain() {
     with_test_runtime(|| {
-        let source = create_signal(1).unwrap();
+        let source = create_signal(1);
 
         let resource = create_resource(
-            move || source.get().unwrap(),
+            move || source.get(),
             |val, resolver| {
                 resolver.resolve(val * 100);
             },
-        )
-        .unwrap();
+        );
 
         // Memo that reads resource state
         let res_for_memo = resource.clone();
-        let resource_val = create_memo(move || res_for_memo.get().unwrap().unwrap_or(0)).unwrap();
+        let resource_val = create_memo(move || res_for_memo.get().unwrap_or(0));
 
         // Effect that reads the memo
         let observed = Rc::new(Cell::new(0));
         let ob = Rc::clone(&observed);
         let _effect = create_effect(move || {
-            ob.set(resource_val.get().unwrap());
-        })
-        .unwrap();
+            ob.set(resource_val.get());
+        });
 
         assert_eq!(observed.get(), 100);
 
-        source.set(2).unwrap();
+        source.set(2);
         assert_eq!(observed.get(), 200);
     });
 }
