@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 
 use smallvec::SmallVec;
 
-use crate::error::{ReactiveError, Result};
+use crate::error::{unwrap_reactive, ReactiveError, Result};
 use crate::runtime::{with_runtime, with_runtime_mut, SignalId, SignalSlot};
 use crate::subscriber::SubscriberId;
 
@@ -22,16 +22,15 @@ use crate::subscriber::SubscriberId;
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
-/// let count = dusty_reactive::create_signal(0)?;
-/// assert_eq!(count.get()?, 0);
+/// let count = dusty_reactive::create_signal(0);
+/// assert_eq!(count.get(), 0);
 ///
-/// count.set(5)?;
-/// assert_eq!(count.get()?, 5);
+/// count.set(5);
+/// assert_eq!(count.get(), 5);
 ///
-/// count.update(|n| *n += 1)?;
-/// assert_eq!(count.get()?, 6);
+/// count.update(|n| *n += 1);
+/// assert_eq!(count.get(), 6);
 /// # dusty_reactive::dispose_runtime();
-/// # Ok::<(), dusty_reactive::ReactiveError>(())
 /// ```
 pub struct Signal<T: 'static> {
     id: SignalId,
@@ -103,20 +102,29 @@ impl<T: 'static> Copy for WriteSignal<T> {}
 /// Create a signal with the given initial value. Returns a combined
 /// read/write handle.
 ///
-/// # Errors
+/// # Panics
 ///
-/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
+/// Panics if no runtime is initialized. Use [`try_create_signal`] for a
+/// fallible variant.
 ///
 /// # Examples
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
-/// let sig = dusty_reactive::create_signal(42)?;
-/// assert_eq!(sig.get()?, 42);
+/// let sig = dusty_reactive::create_signal(42);
+/// assert_eq!(sig.get(), 42);
 /// # dusty_reactive::dispose_runtime();
-/// # Ok::<(), dusty_reactive::ReactiveError>(())
 /// ```
-pub fn create_signal<T: 'static>(value: T) -> Result<Signal<T>> {
+pub fn create_signal<T: 'static>(value: T) -> Signal<T> {
+    unwrap_reactive(try_create_signal(value), "create_signal")
+}
+
+/// Fallible version of [`create_signal`]. Returns `Err` instead of panicking.
+///
+/// # Errors
+///
+/// Returns an error if no runtime is initialized.
+pub fn try_create_signal<T: 'static>(value: T) -> Result<Signal<T>> {
     let id = create_signal_raw(value)?;
     Ok(Signal {
         id,
@@ -127,10 +135,20 @@ pub fn create_signal<T: 'static>(value: T) -> Result<Signal<T>> {
 
 /// Create a signal and immediately split it into read and write handles.
 ///
+/// # Panics
+///
+/// Panics if no runtime is initialized. Use [`try_create_signal_split`] for
+/// a fallible variant.
+pub fn create_signal_split<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+    unwrap_reactive(try_create_signal_split(value), "create_signal_split")
+}
+
+/// Fallible version of [`create_signal_split`].
+///
 /// # Errors
 ///
-/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
-pub fn create_signal_split<T: 'static>(value: T) -> Result<(ReadSignal<T>, WriteSignal<T>)> {
+/// Returns an error if no runtime is initialized.
+pub fn try_create_signal_split<T: 'static>(value: T) -> Result<(ReadSignal<T>, WriteSignal<T>)> {
     let id = create_signal_raw(value)?;
     Ok((
         ReadSignal {
@@ -189,13 +207,23 @@ pub(crate) fn create_signal_raw<T: 'static>(value: T) -> Result<SignalId> {
 
 /// Dispose of a signal, freeing its slot for reuse.
 ///
-/// After disposal, all operations on this signal will return
-/// [`ReactiveError::SignalDisposed`].
+/// After disposal, all operations on this signal will panic (or return
+/// [`ReactiveError::SignalDisposed`] for `try_*` variants).
+///
+/// # Panics
+///
+/// Panics if the signal was already disposed. Use [`try_dispose_signal`]
+/// for a fallible variant.
+pub fn dispose_signal<T: 'static>(signal: Signal<T>) {
+    unwrap_reactive(try_dispose_signal(signal), "dispose_signal");
+}
+
+/// Fallible version of [`dispose_signal`].
 ///
 /// # Errors
 ///
-/// Returns [`ReactiveError::SignalDisposed`] if the signal was already disposed.
-pub fn dispose_signal<T: 'static>(signal: Signal<T>) -> Result<()> {
+/// Returns an error if the runtime is unavailable or the signal is disposed.
+pub fn try_dispose_signal<T: 'static>(signal: Signal<T>) -> Result<()> {
     dispose_signal_raw(signal.id)
 }
 
@@ -396,10 +424,23 @@ impl<T: 'static> ReadSignal<T> {
     /// Get the signal's current value by cloning it. Registers the current
     /// tracking context as a subscriber.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    #[must_use]
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
+        unwrap_reactive(self.try_get(), "ReadSignal::get")
+    }
+
+    /// Fallible version of [`get`](Self::get).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn get(&self) -> Result<T>
+    pub fn try_get(&self) -> Result<T>
     where
         T: Clone,
     {
@@ -409,20 +450,38 @@ impl<T: 'static> ReadSignal<T> {
     /// Access the signal's value by reference without cloning. Registers
     /// the current tracking context as a subscriber.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        unwrap_reactive(self.try_with(f), "ReadSignal::with")
+    }
+
+    /// Fallible version of [`with`](Self::with).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         track_and_read(self.id, f)
     }
 
     /// Access the signal's value by reference without tracking.
     /// No subscriber registration occurs.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        unwrap_reactive(self.try_with_untracked(f), "ReadSignal::with_untracked")
+    }
+
+    /// Fallible version of [`with_untracked`](Self::with_untracked).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         with_signal_value(self.id, f)
     }
 }
@@ -437,21 +496,45 @@ impl<T: 'static> WriteSignal<T> {
     /// Always notifies subscribers even when the new value equals the old value.
     /// Use [`set_if_changed`](Self::set_if_changed) to skip notification when unchanged.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn set(&self, value: T) {
+        unwrap_reactive(self.try_set(value), "WriteSignal::set");
+    }
+
+    /// Fallible version of [`set`](Self::set).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn set(&self, value: T) -> Result<()> {
+    pub fn try_set(&self, value: T) -> Result<()> {
         set_and_notify::<T>(self.id, move |v| *v = value)
     }
 
     /// Replace the signal's value only if it differs from the current value
-    /// (via `PartialEq`). Returns `Ok(true)` if the value was changed and
-    /// subscribers were notified, `Ok(false)` if the value was unchanged.
+    /// (via `PartialEq`). Returns `true` if the value was changed and
+    /// subscribers were notified, `false` if the value was unchanged.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn set_if_changed(&self, value: T) -> bool
+    where
+        T: PartialEq,
+    {
+        unwrap_reactive(
+            self.try_set_if_changed(value),
+            "WriteSignal::set_if_changed",
+        )
+    }
+
+    /// Fallible version of [`set_if_changed`](Self::set_if_changed).
     ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn set_if_changed(&self, value: T) -> Result<bool>
+    pub fn try_set_if_changed(&self, value: T) -> Result<bool>
     where
         T: PartialEq,
     {
@@ -460,10 +543,19 @@ impl<T: 'static> WriteSignal<T> {
 
     /// Mutate the signal's value in place and notify all subscribers.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        unwrap_reactive(self.try_update(f), "WriteSignal::update");
+    }
+
+    /// Fallible version of [`update`](Self::update).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn update(&self, f: impl FnOnce(&mut T)) -> Result<()> {
+    pub fn try_update(&self, f: impl FnOnce(&mut T)) -> Result<()> {
         set_and_notify::<T>(self.id, f)
     }
 }
@@ -501,32 +593,63 @@ impl<T: 'static> Signal<T> {
 
     /// Get the signal's current value by cloning it. Registers tracking.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn get(&self) -> Result<T>
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    #[must_use]
+    pub fn get(&self) -> T
     where
         T: Clone,
     {
         self.read().get()
     }
 
-    /// Access the signal's value by reference. Registers tracking.
+    /// Fallible version of [`get`](Self::get).
     ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+    pub fn try_get(&self) -> Result<T>
+    where
+        T: Clone,
+    {
+        self.read().try_get()
+    }
+
+    /// Access the signal's value by reference. Registers tracking.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         self.read().with(f)
+    }
+
+    /// Fallible version of [`with`](Self::with).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the runtime is unavailable or the signal is disposed.
+    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+        self.read().try_with(f)
     }
 
     /// Access the signal's value by reference without tracking.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        self.read().with_untracked(f)
+    }
+
+    /// Fallible version of [`with_untracked`](Self::with_untracked).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
-        self.read().with_untracked(f)
+    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+        self.read().try_with_untracked(f)
     }
 
     /// Replace the signal's value and notify subscribers.
@@ -534,34 +657,64 @@ impl<T: 'static> Signal<T> {
     /// Always notifies subscribers even when the new value equals the old value.
     /// Use [`set_if_changed`](Self::set_if_changed) to skip notification when unchanged.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn set(&self, value: T) {
+        self.write().set(value);
+    }
+
+    /// Fallible version of [`set`](Self::set).
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn set(&self, value: T) -> Result<()> {
-        self.write().set(value)
+    pub fn try_set(&self, value: T) -> Result<()> {
+        self.write().try_set(value)
     }
 
     /// Replace the signal's value only if it differs from the current value
-    /// (via `PartialEq`). Returns `Ok(true)` if the value was changed and
-    /// subscribers were notified, `Ok(false)` if the value was unchanged.
+    /// (via `PartialEq`). Returns `true` if the value was changed and
+    /// subscribers were notified, `false` if the value was unchanged.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn set_if_changed(&self, value: T) -> Result<bool>
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn set_if_changed(&self, value: T) -> bool
     where
         T: PartialEq,
     {
         self.write().set_if_changed(value)
     }
 
-    /// Mutate the signal's value in place and notify subscribers.
+    /// Fallible version of [`set_if_changed`](Self::set_if_changed).
     ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the signal is disposed.
-    pub fn update(&self, f: impl FnOnce(&mut T)) -> Result<()> {
-        self.write().update(f)
+    pub fn try_set_if_changed(&self, value: T) -> Result<bool>
+    where
+        T: PartialEq,
+    {
+        self.write().try_set_if_changed(value)
+    }
+
+    /// Mutate the signal's value in place and notify subscribers.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the signal is disposed.
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        self.write().update(f);
+    }
+
+    /// Fallible version of [`update`](Self::update).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the runtime is unavailable or the signal is disposed.
+    pub fn try_update(&self, f: impl FnOnce(&mut T)) -> Result<()> {
+        self.write().try_update(f)
     }
 }
 
@@ -587,23 +740,23 @@ mod tests {
     #[test]
     fn create_signal_and_get() {
         with_test_runtime(|| {
-            let sig = create_signal(42).unwrap();
-            assert_eq!(sig.get().unwrap(), 42);
+            let sig = create_signal(42);
+            assert_eq!(sig.get(), 42);
         });
     }
 
     #[test]
     fn create_signal_no_runtime() {
         dispose_runtime();
-        let result = create_signal(0);
+        let result = try_create_signal(0);
         assert_eq!(result.unwrap_err(), ReactiveError::NoRuntime);
     }
 
     #[test]
     fn signal_with_ref_access() {
         with_test_runtime(|| {
-            let sig = create_signal(String::from("hello")).unwrap();
-            let len = sig.with(|s| s.len()).unwrap();
+            let sig = create_signal(String::from("hello"));
+            let len = sig.with(|s| s.len());
             assert_eq!(len, 5);
         });
     }
@@ -611,8 +764,8 @@ mod tests {
     #[test]
     fn signal_with_untracked() {
         with_test_runtime(|| {
-            let sig = create_signal(10).unwrap();
-            let val = sig.with_untracked(|v| *v).unwrap();
+            let sig = create_signal(10);
+            let val = sig.with_untracked(|v| *v);
             assert_eq!(val, 10);
         });
     }
@@ -620,34 +773,34 @@ mod tests {
     #[test]
     fn signal_is_copy() {
         with_test_runtime(|| {
-            let sig = create_signal(1).unwrap();
+            let sig = create_signal(1);
             let sig2 = sig;
             // Both should work — Copy semantics
-            assert_eq!(sig.get().unwrap(), 1);
-            assert_eq!(sig2.get().unwrap(), 1);
+            assert_eq!(sig.get(), 1);
+            assert_eq!(sig2.get(), 1);
         });
     }
 
     #[test]
     fn read_signal_is_copy() {
         with_test_runtime(|| {
-            let sig = create_signal(1).unwrap();
+            let sig = create_signal(1);
             let r = sig.read();
             let r2 = r;
-            assert_eq!(r.get().unwrap(), 1);
-            assert_eq!(r2.get().unwrap(), 1);
+            assert_eq!(r.get(), 1);
+            assert_eq!(r2.get(), 1);
         });
     }
 
     #[test]
     fn write_signal_is_copy() {
         with_test_runtime(|| {
-            let sig = create_signal(1).unwrap();
+            let sig = create_signal(1);
             let w = sig.write();
             let w2 = w;
-            w.set(2).unwrap();
-            w2.set(3).unwrap();
-            assert_eq!(sig.get().unwrap(), 3);
+            w.set(2);
+            w2.set(3);
+            assert_eq!(sig.get(), 3);
         });
     }
 
@@ -656,29 +809,29 @@ mod tests {
     #[test]
     fn set_changes_value() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
-            sig.set(99).unwrap();
-            assert_eq!(sig.get().unwrap(), 99);
+            let sig = create_signal(0);
+            sig.set(99);
+            assert_eq!(sig.get(), 99);
         });
     }
 
     #[test]
     fn multiple_sets() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
-            sig.set(1).unwrap();
-            sig.set(2).unwrap();
-            sig.set(3).unwrap();
-            assert_eq!(sig.get().unwrap(), 3);
+            let sig = create_signal(0);
+            sig.set(1);
+            sig.set(2);
+            sig.set(3);
+            assert_eq!(sig.get(), 3);
         });
     }
 
     #[test]
     fn update_mutates_in_place() {
         with_test_runtime(|| {
-            let sig = create_signal(vec![1, 2, 3]).unwrap();
-            sig.update(|v| v.push(4)).unwrap();
-            let len = sig.with(|v| v.len()).unwrap();
+            let sig = create_signal(vec![1, 2, 3]);
+            sig.update(|v| v.push(4));
+            let len = sig.with(|v| v.len());
             assert_eq!(len, 4);
         });
     }
@@ -686,9 +839,9 @@ mod tests {
     #[test]
     fn update_with_closure() {
         with_test_runtime(|| {
-            let sig = create_signal(10).unwrap();
-            sig.update(|n| *n *= 2).unwrap();
-            assert_eq!(sig.get().unwrap(), 20);
+            let sig = create_signal(10);
+            sig.update(|n| *n *= 2);
+            assert_eq!(sig.get(), 20);
         });
     }
 
@@ -697,33 +850,33 @@ mod tests {
     #[test]
     fn split_returns_working_pair() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let (read, write) = sig.split();
-            write.set(42).unwrap();
-            assert_eq!(read.get().unwrap(), 42);
+            write.set(42);
+            assert_eq!(read.get(), 42);
         });
     }
 
     #[test]
     fn create_signal_split_shares_state() {
         with_test_runtime(|| {
-            let (read, write) = create_signal_split(100).unwrap();
-            assert_eq!(read.get().unwrap(), 100);
-            write.set(200).unwrap();
-            assert_eq!(read.get().unwrap(), 200);
+            let (read, write) = create_signal_split(100);
+            assert_eq!(read.get(), 100);
+            write.set(200);
+            assert_eq!(read.get(), 200);
         });
     }
 
     #[test]
     fn read_write_from_signal() {
         with_test_runtime(|| {
-            let sig = create_signal(5).unwrap();
+            let sig = create_signal(5);
             let r = sig.read();
             let w = sig.write();
-            w.set(10).unwrap();
-            assert_eq!(r.get().unwrap(), 10);
+            w.set(10);
+            assert_eq!(r.get(), 10);
             // Original signal also sees the update
-            assert_eq!(sig.get().unwrap(), 10);
+            assert_eq!(sig.get(), 10);
         });
     }
 
@@ -732,7 +885,7 @@ mod tests {
     #[test]
     fn set_notifies_subscriber() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let count = Rc::new(Cell::new(0));
             let count_clone = Rc::clone(&count);
 
@@ -747,10 +900,10 @@ mod tests {
             })
             .unwrap();
 
-            sig.set(1).unwrap();
+            sig.set(1);
             assert_eq!(count.get(), 1);
 
-            sig.set(2).unwrap();
+            sig.set(2);
             assert_eq!(count.get(), 2);
         });
     }
@@ -758,7 +911,7 @@ mod tests {
     #[test]
     fn update_notifies_subscriber() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let notified = Rc::new(Cell::new(false));
             let notified_clone = Rc::clone(&notified);
 
@@ -772,7 +925,7 @@ mod tests {
             })
             .unwrap();
 
-            sig.update(|n| *n += 1).unwrap();
+            sig.update(|n| *n += 1);
             assert!(notified.get());
         });
     }
@@ -780,7 +933,7 @@ mod tests {
     #[test]
     fn multiple_subscribers_notified() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let count_a = Rc::new(Cell::new(0));
             let count_b = Rc::new(Cell::new(0));
 
@@ -803,7 +956,7 @@ mod tests {
             })
             .unwrap();
 
-            sig.set(1).unwrap();
+            sig.set(1);
             assert_eq!(count_a.get(), 1);
             assert_eq!(count_b.get(), 1);
         });
@@ -812,7 +965,7 @@ mod tests {
     #[test]
     fn tracking_registers_subscriber() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let notified = Rc::new(Cell::new(false));
             let notified_clone = Rc::clone(&notified);
 
@@ -823,11 +976,11 @@ mod tests {
 
             // Push subscriber onto tracking stack, then read
             crate::subscriber::push_tracking(sub_id).unwrap();
-            let _val = sig.get().unwrap();
+            let _val = sig.get();
             crate::subscriber::pop_tracking().unwrap();
 
             // Now set should trigger notification
-            sig.set(1).unwrap();
+            sig.set(1);
             assert!(notified.get());
         });
     }
@@ -835,7 +988,7 @@ mod tests {
     #[test]
     fn untracked_does_not_register() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let notified = Rc::new(Cell::new(false));
             let notified_clone = Rc::clone(&notified);
 
@@ -846,11 +999,11 @@ mod tests {
 
             // Push subscriber onto tracking stack, but use untracked read
             crate::subscriber::push_tracking(sub_id).unwrap();
-            let _val = sig.with_untracked(|v| *v).unwrap();
+            let _val = sig.with_untracked(|v| *v);
             crate::subscriber::pop_tracking().unwrap();
 
             // Set should NOT trigger notification
-            sig.set(1).unwrap();
+            sig.set(1);
             assert!(!notified.get());
         });
     }
@@ -858,7 +1011,7 @@ mod tests {
     #[test]
     fn unsubscribe_stops_notification() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let count = Rc::new(Cell::new(0));
             let count_clone = Rc::clone(&count);
 
@@ -872,13 +1025,13 @@ mod tests {
             })
             .unwrap();
 
-            sig.set(1).unwrap();
+            sig.set(1);
             assert_eq!(count.get(), 1);
 
             // Unregister the subscriber
             crate::subscriber::unregister_subscriber(sub_id).unwrap();
 
-            sig.set(2).unwrap();
+            sig.set(2);
             // Callback slot is None, so notification is a no-op
             assert_eq!(count.get(), 1);
         });
@@ -889,36 +1042,46 @@ mod tests {
     #[test]
     fn disposed_signal_returns_error() {
         with_test_runtime(|| {
-            let sig = create_signal(42).unwrap();
-            dispose_signal(sig).unwrap();
-            assert_eq!(sig.get().unwrap_err(), ReactiveError::SignalDisposed);
-            assert_eq!(sig.set(0).unwrap_err(), ReactiveError::SignalDisposed);
+            let sig = create_signal(42);
+            dispose_signal(sig);
+            assert_eq!(sig.try_get().unwrap_err(), ReactiveError::SignalDisposed);
+            assert_eq!(sig.try_set(0).unwrap_err(), ReactiveError::SignalDisposed);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "dusty reactive error")]
+    fn disposed_signal_panics_on_get() {
+        with_test_runtime(|| {
+            let sig = create_signal(42);
+            dispose_signal(sig);
+            let _ = sig.get();
         });
     }
 
     #[test]
     fn disposed_slot_is_recycled() {
         with_test_runtime(|| {
-            let sig1 = create_signal(1).unwrap();
+            let sig1 = create_signal(1);
             let old_index = sig1.id.index;
-            dispose_signal(sig1).unwrap();
+            dispose_signal(sig1);
 
-            let sig2 = create_signal(2).unwrap();
+            let sig2 = create_signal(2);
             // Should reuse the same slot
             assert_eq!(sig2.id.index, old_index);
             // But with a higher generation
             assert!(sig2.id.generation > sig1.id.generation);
-            assert_eq!(sig2.get().unwrap(), 2);
+            assert_eq!(sig2.get(), 2);
 
             // Old handle still fails
-            assert_eq!(sig1.get().unwrap_err(), ReactiveError::SignalDisposed);
+            assert_eq!(sig1.try_get().unwrap_err(), ReactiveError::SignalDisposed);
         });
     }
 
     #[test]
     fn disposal_cleans_up_subscribers() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let count = Rc::new(Cell::new(0));
             let count_clone = Rc::clone(&count);
 
@@ -932,7 +1095,7 @@ mod tests {
             })
             .unwrap();
 
-            dispose_signal(sig).unwrap();
+            dispose_signal(sig);
 
             // Subscriber should still exist — signal disposal must not destroy shared subscribers
             crate::runtime::with_runtime(|rt| {
@@ -945,24 +1108,23 @@ mod tests {
     #[test]
     fn dispose_signal_does_not_destroy_shared_subscriber() {
         with_test_runtime(|| {
-            let sig_a = create_signal(0).unwrap();
-            let sig_b = create_signal(0).unwrap();
+            let sig_a = create_signal(0);
+            let sig_b = create_signal(0);
             let count = Rc::new(Cell::new(0));
 
             let cc = Rc::clone(&count);
             let _effect = crate::effect::create_effect(move || {
-                let _va = sig_a.get().unwrap_or(0);
-                let _vb = sig_b.get().unwrap_or(0);
+                let _va = sig_a.try_get().unwrap_or(0);
+                let _vb = sig_b.try_get().unwrap_or(0);
                 cc.set(cc.get() + 1);
-            })
-            .unwrap();
+            });
 
             assert_eq!(count.get(), 1);
 
             // Dispose sig_a — effect should still fire when sig_b changes
-            dispose_signal(sig_a).unwrap();
+            dispose_signal(sig_a);
 
-            sig_b.set(42).unwrap();
+            sig_b.set(42);
             assert_eq!(count.get(), 2);
         });
     }
@@ -972,12 +1134,12 @@ mod tests {
     #[test]
     fn idempotent_subscriber_tracking() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let sub_id = crate::subscriber::register_subscriber(|| {}).unwrap();
 
             crate::subscriber::push_tracking(sub_id).unwrap();
-            let _v1 = sig.get().unwrap();
-            let _v2 = sig.get().unwrap(); // read again from same context
+            let _v1 = sig.get();
+            let _v2 = sig.get(); // read again from same context
             crate::subscriber::pop_tracking().unwrap();
 
             let count = crate::runtime::with_runtime(|rt| {
@@ -991,12 +1153,12 @@ mod tests {
     #[test]
     fn signal_with_many_subscribers_tracks_correctly() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
 
             for _ in 0..100 {
                 let sub_id = crate::subscriber::register_subscriber(|| {}).unwrap();
                 crate::subscriber::push_tracking(sub_id).unwrap();
-                let _v = sig.get().unwrap();
+                let _v = sig.get();
                 crate::subscriber::pop_tracking().unwrap();
             }
 
@@ -1013,16 +1175,15 @@ mod tests {
     #[test]
     fn notify_spills_beyond_inline_capacity() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let counts: Vec<Rc<Cell<u32>>> = (0..20).map(|_| Rc::new(Cell::new(0))).collect();
 
             for count in &counts {
                 let c = Rc::clone(count);
                 let _effect = crate::effect::create_effect(move || {
-                    let _v = sig.get().unwrap();
+                    let _v = sig.get();
                     c.set(c.get() + 1);
-                })
-                .unwrap();
+                });
             }
 
             // All effects ran once on creation
@@ -1030,7 +1191,7 @@ mod tests {
                 assert_eq!(count.get(), 1);
             }
 
-            sig.set(1).unwrap();
+            sig.set(1);
 
             // All 20 should have been notified
             for count in &counts {
@@ -1053,11 +1214,10 @@ mod tests {
             let sig = create_signal(User {
                 name: "Alice".into(),
                 age: 30,
-            })
-            .unwrap();
+            });
 
-            sig.update(|u| u.age += 1).unwrap();
-            let user = sig.get().unwrap();
+            sig.update(|u| u.age += 1);
+            let user = sig.get();
             assert_eq!(user.age, 31);
             assert_eq!(user.name, "Alice");
         });
@@ -1068,7 +1228,7 @@ mod tests {
     #[test]
     fn set_if_changed_skips_notification_for_same_value() {
         with_test_runtime(|| {
-            let sig = create_signal(42).unwrap();
+            let sig = create_signal(42);
             let count = Rc::new(Cell::new(0));
             let count_clone = Rc::clone(&count);
 
@@ -1082,25 +1242,25 @@ mod tests {
             })
             .unwrap();
 
-            // Same value — should not notify, returns Ok(false)
-            let result = sig.set_if_changed(42).unwrap();
+            // Same value — should not notify, returns false
+            let result = sig.set_if_changed(42);
             assert!(!result);
             assert_eq!(count.get(), 0);
 
-            // Different value — should notify, returns Ok(true)
-            let result = sig.set_if_changed(99).unwrap();
+            // Different value — should notify, returns true
+            let result = sig.set_if_changed(99);
             assert!(result);
             assert_eq!(count.get(), 1);
 
             // Verify the value was updated
-            assert_eq!(sig.get().unwrap(), 99);
+            assert_eq!(sig.get(), 99);
         });
     }
 
     #[test]
     fn set_if_changed_on_write_signal() {
         with_test_runtime(|| {
-            let (read, write) = create_signal_split(10).unwrap();
+            let (read, write) = create_signal_split(10);
             let count = Rc::new(Cell::new(0));
             let count_clone = Rc::clone(&count);
 
@@ -1115,16 +1275,16 @@ mod tests {
             .unwrap();
 
             // Same value — no notification
-            let result = write.set_if_changed(10).unwrap();
+            let result = write.set_if_changed(10);
             assert!(!result);
             assert_eq!(count.get(), 0);
-            assert_eq!(read.get().unwrap(), 10);
+            assert_eq!(read.get(), 10);
 
             // Different value — notification fires
-            let result = write.set_if_changed(20).unwrap();
+            let result = write.set_if_changed(20);
             assert!(result);
             assert_eq!(count.get(), 1);
-            assert_eq!(read.get().unwrap(), 20);
+            assert_eq!(read.get(), 20);
         });
     }
 }

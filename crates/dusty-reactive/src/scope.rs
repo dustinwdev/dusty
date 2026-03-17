@@ -8,11 +8,11 @@
 //! ```
 //! # dusty_reactive::initialize_runtime();
 //! let scope = dusty_reactive::create_scope(|_s| {
-//!     let sig = dusty_reactive::create_signal(42).unwrap();
-//!     assert_eq!(sig.get().unwrap(), 42);
-//! }).unwrap();
+//!     let sig = dusty_reactive::create_signal(42);
+//!     assert_eq!(sig.get(), 42);
+//! });
 //!
-//! dusty_reactive::dispose_scope(scope).unwrap();
+//! dusty_reactive::dispose_scope(scope);
 //! # dusty_reactive::dispose_runtime();
 //! ```
 
@@ -20,7 +20,7 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-use crate::error::{ReactiveError, Result};
+use crate::error::{unwrap_reactive, ReactiveError, Result};
 use crate::runtime::{with_runtime, with_runtime_mut, ScopeId, ScopeSlot};
 
 /// A reactive scope that owns signals, memos, and effects.
@@ -40,10 +40,21 @@ pub struct Scope {
 /// Create a new root scope. Runs `f` with the scope active, so any signals,
 /// memos, or effects created inside `f` are owned by this scope.
 ///
+/// # Panics
+///
+/// Panics if no runtime is initialized. Use [`try_create_scope`] for a
+/// fallible variant.
+#[track_caller]
+pub fn create_scope(f: impl FnOnce(Scope)) -> Scope {
+    unwrap_reactive(try_create_scope(f), "create_scope")
+}
+
+/// Fallible version of [`create_scope`].
+///
 /// # Errors
 ///
 /// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
-pub fn create_scope(f: impl FnOnce(Scope)) -> Result<Scope> {
+pub fn try_create_scope(f: impl FnOnce(Scope)) -> Result<Scope> {
     let id = alloc_scope(None)?;
     let scope = Scope {
         id,
@@ -64,10 +75,21 @@ pub fn create_scope(f: impl FnOnce(Scope)) -> Result<Scope> {
 /// Create a child scope under `parent`. The child is registered in the
 /// parent's children list and will be disposed when the parent is disposed.
 ///
+/// # Panics
+///
+/// Panics if the parent scope is dead. Use [`try_create_child_scope`] for a
+/// fallible variant.
+#[track_caller]
+pub fn create_child_scope(parent: Scope, f: impl FnOnce(Scope)) -> Scope {
+    unwrap_reactive(try_create_child_scope(parent, f), "create_child_scope")
+}
+
+/// Fallible version of [`create_child_scope`].
+///
 /// # Errors
 ///
 /// Returns [`ReactiveError::ScopeDisposed`] if the parent scope is dead.
-pub fn create_child_scope(parent: Scope, f: impl FnOnce(Scope)) -> Result<Scope> {
+pub fn try_create_child_scope(parent: Scope, f: impl FnOnce(Scope)) -> Result<Scope> {
     validate_scope(parent.id)?;
     let id = alloc_scope(Some(parent.id))?;
 
@@ -96,31 +118,53 @@ pub fn create_child_scope(parent: Scope, f: impl FnOnce(Scope)) -> Result<Scope>
 /// Dispose a scope: recursively dispose children (depth-first), run disposers
 /// in reverse (LIFO) order, mark dead, and remove from parent's children list.
 ///
+/// # Panics
+///
+/// Panics if the scope was already disposed. Use [`try_dispose_scope`] for a
+/// fallible variant.
+#[track_caller]
+pub fn dispose_scope(scope: Scope) {
+    unwrap_reactive(try_dispose_scope(scope), "dispose_scope");
+}
+
+/// Fallible version of [`dispose_scope`].
+///
 /// # Errors
 ///
 /// Returns [`ReactiveError::ScopeDisposed`] if the scope was already disposed.
-pub fn dispose_scope(scope: Scope) -> Result<()> {
+pub fn try_dispose_scope(scope: Scope) -> Result<()> {
     dispose_scope_inner(scope.id)
 }
 
 /// Store a value in the current scope's context, keyed by its [`TypeId`].
 ///
-/// # Errors
+/// # Panics
 ///
-/// Returns [`ReactiveError::ScopeDisposed`] if no scope is currently active.
+/// Panics if no scope is currently active. Use [`try_provide_context`] for a
+/// fallible variant.
 ///
 /// # Examples
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
 /// let _scope = dusty_reactive::create_scope(|_s| {
-///     dusty_reactive::provide_context(42_i32).unwrap();
-///     let val = dusty_reactive::use_context::<i32>().unwrap();
+///     dusty_reactive::provide_context(42_i32);
+///     let val = dusty_reactive::use_context::<i32>();
 ///     assert_eq!(val, Some(42));
-/// }).unwrap();
+/// });
 /// # dusty_reactive::dispose_runtime();
 /// ```
-pub fn provide_context<T: 'static>(value: T) -> Result<()> {
+#[track_caller]
+pub fn provide_context<T: 'static>(value: T) {
+    unwrap_reactive(try_provide_context(value), "provide_context");
+}
+
+/// Fallible version of [`provide_context`].
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::ScopeDisposed`] if no scope is currently active.
+pub fn try_provide_context<T: 'static>(value: T) -> Result<()> {
     let scope_id = current_scope()?;
     let id = scope_id.ok_or(ReactiveError::ScopeDisposed)?;
     with_runtime_mut(|rt| {
@@ -132,25 +176,37 @@ pub fn provide_context<T: 'static>(value: T) -> Result<()> {
 }
 
 /// Walk up the scope tree from the current scope, returning the first value
-/// of type `T` found (cloned). Returns `Ok(None)` if no scope is active or
+/// of type `T` found (cloned). Returns `None` if no scope is active or
 /// no value of type `T` exists in any ancestor scope.
 ///
-/// # Errors
+/// # Panics
 ///
-/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
+/// Panics if no runtime is initialized. Use [`try_use_context`] for a
+/// fallible variant.
 ///
 /// # Examples
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
 /// let _scope = dusty_reactive::create_scope(|_s| {
-///     dusty_reactive::provide_context("hello".to_string()).unwrap();
-///     let val = dusty_reactive::use_context::<String>().unwrap();
+///     dusty_reactive::provide_context("hello".to_string());
+///     let val = dusty_reactive::use_context::<String>();
 ///     assert_eq!(val.as_deref(), Some("hello"));
-/// }).unwrap();
+/// });
 /// # dusty_reactive::dispose_runtime();
 /// ```
-pub fn use_context<T: Clone + 'static>() -> Result<Option<T>> {
+#[must_use]
+#[track_caller]
+pub fn use_context<T: Clone + 'static>() -> Option<T> {
+    unwrap_reactive(try_use_context(), "use_context")
+}
+
+/// Fallible version of [`use_context`].
+///
+/// # Errors
+///
+/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
+pub fn try_use_context<T: Clone + 'static>() -> Result<Option<T>> {
     with_runtime(|rt| {
         let mut scope_id = rt.scope_stack.last().copied();
         while let Some(id) = scope_id {
@@ -181,10 +237,20 @@ impl Scope {
     /// Push this scope onto the scope stack, run `f`, then pop.
     /// Any reactive primitives created inside `f` will be owned by this scope.
     ///
+    /// # Panics
+    ///
+    /// Panics if the scope is dead. Use [`Scope::try_run`] for a fallible variant.
+    #[track_caller]
+    pub fn run<R>(&self, f: impl FnOnce() -> R) -> R {
+        unwrap_reactive(self.try_run(f), "Scope::run")
+    }
+
+    /// Fallible version of [`Scope::run`].
+    ///
     /// # Errors
     ///
     /// Returns [`ReactiveError::ScopeDisposed`] if the scope is dead.
-    pub fn run<R>(&self, f: impl FnOnce() -> R) -> Result<R> {
+    pub fn try_run<R>(&self, f: impl FnOnce() -> R) -> Result<R> {
         validate_scope(self.id)?;
         push_scope(self.id)?;
 
@@ -200,20 +266,43 @@ impl Scope {
 
     /// Create a child scope under this scope.
     ///
+    /// # Panics
+    ///
+    /// Panics if this scope is dead. Use [`Scope::try_create_child`] for a
+    /// fallible variant.
+    #[must_use]
+    #[track_caller]
+    pub fn create_child(&self, f: impl FnOnce(Self)) -> Self {
+        unwrap_reactive(self.try_create_child(f), "Scope::create_child")
+    }
+
+    /// Fallible version of [`Scope::create_child`].
+    ///
     /// # Errors
     ///
     /// Returns [`ReactiveError::ScopeDisposed`] if this scope is dead.
-    pub fn create_child(&self, f: impl FnOnce(Self)) -> Result<Self> {
-        create_child_scope(*self, f)
+    pub fn try_create_child(&self, f: impl FnOnce(Self)) -> Result<Self> {
+        try_create_child_scope(*self, f)
     }
 
     /// Dispose this scope and all its owned primitives.
     ///
+    /// # Panics
+    ///
+    /// Panics if the scope was already disposed. Use [`Scope::try_dispose`]
+    /// for a fallible variant.
+    #[track_caller]
+    pub fn dispose(self) {
+        unwrap_reactive(self.try_dispose(), "Scope::dispose");
+    }
+
+    /// Fallible version of [`Scope::dispose`].
+    ///
     /// # Errors
     ///
     /// Returns [`ReactiveError::ScopeDisposed`] if the scope was already disposed.
-    pub fn dispose(self) -> Result<()> {
-        dispose_scope(self)
+    pub fn try_dispose(self) -> Result<()> {
+        try_dispose_scope(self)
     }
 }
 
@@ -366,7 +455,7 @@ mod tests {
     #[test]
     fn create_scope_and_access() {
         with_test_runtime(|| {
-            let scope = create_scope(|_s| {}).unwrap();
+            let scope = create_scope(|_s| {});
             // Scope exists and is valid
             assert!(validate_scope(scope.id).is_ok());
         });
@@ -375,7 +464,7 @@ mod tests {
     #[test]
     fn scope_is_copy() {
         with_test_runtime(|| {
-            let scope = create_scope(|_s| {}).unwrap();
+            let scope = create_scope(|_s| {});
             let scope2 = scope;
             assert_eq!(scope, scope2);
         });
@@ -388,41 +477,39 @@ mod tests {
             let sh = Rc::clone(&sig_handle);
 
             let scope = create_scope(|_s| {
-                let sig = crate::signal::create_signal(42).unwrap();
-                assert_eq!(sig.get().unwrap(), 42);
+                let sig = crate::signal::create_signal(42);
+                assert_eq!(sig.get(), 42);
                 sh.set(Some(sig));
-            })
-            .unwrap();
+            });
 
             // Signal works before scope dispose
             let sig = sig_handle.get().unwrap();
-            assert_eq!(sig.get().unwrap(), 42);
+            assert_eq!(sig.get(), 42);
 
             // Dispose scope — signal should be cleaned up
-            dispose_scope(scope).unwrap();
-            assert_eq!(sig.get().unwrap_err(), ReactiveError::SignalDisposed);
+            dispose_scope(scope);
+            assert_eq!(sig.try_get().unwrap_err(), ReactiveError::SignalDisposed);
         });
     }
 
     #[test]
     fn scope_disposes_memos() {
         with_test_runtime(|| {
-            let source = crate::signal::create_signal(5).unwrap();
+            let source = crate::signal::create_signal(5);
             let memo_handle = Rc::new(RefCell::new(None));
             let mh = Rc::clone(&memo_handle);
 
             let scope = create_scope(|_s| {
-                let m = crate::memo::create_memo(move || source.get().unwrap() * 2).unwrap();
-                assert_eq!(m.get().unwrap(), 10);
+                let m = crate::memo::create_memo(move || source.get() * 2);
+                assert_eq!(m.get(), 10);
                 *mh.borrow_mut() = Some(m);
-            })
-            .unwrap();
+            });
 
             let m = memo_handle.borrow().as_ref().unwrap().clone();
-            assert_eq!(m.get().unwrap(), 10);
+            assert_eq!(m.get(), 10);
 
-            dispose_scope(scope).unwrap();
-            assert_eq!(m.get().unwrap_err(), ReactiveError::MemoDisposed);
+            dispose_scope(scope);
+            assert_eq!(m.try_get().unwrap_err(), ReactiveError::MemoDisposed);
         });
     }
 
@@ -438,10 +525,9 @@ mod tests {
                 register_disposer(Box::new(move || o2.borrow_mut().push(2))).unwrap();
                 let o3 = Rc::clone(&order);
                 register_disposer(Box::new(move || o3.borrow_mut().push(3))).unwrap();
-            })
-            .unwrap();
+            });
 
-            dispose_scope(scope).unwrap();
+            dispose_scope(scope);
             assert_eq!(*order.borrow(), vec![3, 2, 1]);
         });
     }
@@ -456,13 +542,11 @@ mod tests {
                 let _child = create_child_scope(p, |_c| {
                     let cd2 = Rc::clone(&cd);
                     register_disposer(Box::new(move || cd2.set(true))).unwrap();
-                })
-                .unwrap();
-            })
-            .unwrap();
+                });
+            });
 
             assert!(!child_disposed.get());
-            dispose_scope(parent).unwrap();
+            dispose_scope(parent);
             assert!(child_disposed.get());
         });
     }
@@ -485,21 +569,19 @@ mod tests {
                 let child = create_child_scope(p, |_c| {
                     let cm2 = Rc::clone(&cm);
                     register_disposer(Box::new(move || cm2.set(true))).unwrap();
-                })
-                .unwrap();
+                });
                 ch.set(Some(child));
-            })
-            .unwrap();
+            });
 
             let child = child_handle.get().unwrap();
 
             // Disposing child should NOT dispose parent
-            dispose_scope(child).unwrap();
+            dispose_scope(child);
             assert!(child_marker.get());
             assert!(!parent_marker.get());
 
             // Parent should still be alive
-            dispose_scope(parent).unwrap();
+            dispose_scope(parent);
             assert!(parent_marker.get());
         });
     }
@@ -520,14 +602,11 @@ mod tests {
                     let _leaf = create_child_scope(s2, |_s3| {
                         let o = Rc::clone(&order);
                         register_disposer(Box::new(move || o.borrow_mut().push("leaf"))).unwrap();
-                    })
-                    .unwrap();
-                })
-                .unwrap();
-            })
-            .unwrap();
+                    });
+                });
+            });
 
-            dispose_scope(root).unwrap();
+            dispose_scope(root);
             // Depth-first: leaf disposed first, then mid, then root
             assert_eq!(*order.borrow(), vec!["leaf", "mid", "root"]);
         });
@@ -536,10 +615,10 @@ mod tests {
     #[test]
     fn double_dispose_scope_errors() {
         with_test_runtime(|| {
-            let scope = create_scope(|_s| {}).unwrap();
-            dispose_scope(scope).unwrap();
+            let scope = create_scope(|_s| {});
+            dispose_scope(scope);
             assert_eq!(
-                dispose_scope(scope).unwrap_err(),
+                try_dispose_scope(scope).unwrap_err(),
                 ReactiveError::ScopeDisposed
             );
         });
@@ -548,37 +627,33 @@ mod tests {
     #[test]
     fn scope_run_pushes_and_pops() {
         with_test_runtime(|| {
-            let scope = create_scope(|_s| {}).unwrap();
+            let scope = create_scope(|_s| {});
 
             let sig_handle = Rc::new(Cell::new(None));
             let sh = Rc::clone(&sig_handle);
 
-            scope
-                .run(|| {
-                    let sig = crate::signal::create_signal(99).unwrap();
-                    sh.set(Some(sig));
-                })
-                .unwrap();
+            scope.run(|| {
+                let sig = crate::signal::create_signal(99);
+                sh.set(Some(sig));
+            });
 
             let sig = sig_handle.get().unwrap();
-            assert_eq!(sig.get().unwrap(), 99);
+            assert_eq!(sig.get(), 99);
 
-            dispose_scope(scope).unwrap();
-            assert_eq!(sig.get().unwrap_err(), ReactiveError::SignalDisposed);
+            dispose_scope(scope);
+            assert_eq!(sig.try_get().unwrap_err(), ReactiveError::SignalDisposed);
         });
     }
 
     #[test]
     fn scope_run_panic_restores_scope_stack() {
         with_test_runtime(|| {
-            let scope = create_scope(|_s| {}).unwrap();
+            let scope = create_scope(|_s| {});
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                scope
-                    .run(|| {
-                        panic!("scope run panic");
-                    })
-                    .unwrap();
+                scope.run(|| {
+                    panic!("scope run panic");
+                });
             }));
             assert!(result.is_err());
 
@@ -587,17 +662,16 @@ mod tests {
             let sh = Rc::clone(&sig_handle);
 
             let new_scope = create_scope(|_s| {
-                let sig = crate::signal::create_signal(42).unwrap();
+                let sig = crate::signal::create_signal(42);
                 sh.set(Some(sig));
-            })
-            .unwrap();
+            });
 
             let sig = sig_handle.get().unwrap();
-            assert_eq!(sig.get().unwrap(), 42);
+            assert_eq!(sig.get(), 42);
 
-            dispose_scope(new_scope).unwrap();
+            dispose_scope(new_scope);
             assert_eq!(
-                sig.get().unwrap_err(),
+                sig.try_get().unwrap_err(),
                 crate::error::ReactiveError::SignalDisposed
             );
         });
@@ -609,18 +683,16 @@ mod tests {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 create_scope(|_s| {
                     panic!("create_scope panic");
-                })
-                .unwrap();
+                });
             }));
             assert!(result.is_err());
 
             // Scope stack should be clean
             let new_scope = create_scope(|_s| {
-                let sig = crate::signal::create_signal(99).unwrap();
-                assert_eq!(sig.get().unwrap(), 99);
-            })
-            .unwrap();
-            dispose_scope(new_scope).unwrap();
+                let sig = crate::signal::create_signal(99);
+                assert_eq!(sig.get(), 99);
+            });
+            dispose_scope(new_scope);
         });
     }
 
@@ -632,11 +704,10 @@ mod tests {
     fn provide_and_use_context_same_scope() {
         with_test_runtime(|| {
             let _scope = create_scope(|_s| {
-                provide_context(42_i32).unwrap();
-                let val = use_context::<i32>().unwrap();
+                provide_context(42_i32);
+                let val = use_context::<i32>();
                 assert_eq!(val, Some(42));
-            })
-            .unwrap();
+            });
         });
     }
 
@@ -644,14 +715,12 @@ mod tests {
     fn use_context_walks_up_to_parent() {
         with_test_runtime(|| {
             let _scope = create_scope(|p| {
-                provide_context(42_i32).unwrap();
+                provide_context(42_i32);
                 let _child = create_child_scope(p, |_c| {
-                    let val = use_context::<i32>().unwrap();
+                    let val = use_context::<i32>();
                     assert_eq!(val, Some(42));
-                })
-                .unwrap();
-            })
-            .unwrap();
+                });
+            });
         });
     }
 
@@ -659,17 +728,14 @@ mod tests {
     fn use_context_walks_multiple_levels() {
         with_test_runtime(|| {
             let _scope = create_scope(|p| {
-                provide_context("root".to_string()).unwrap();
+                provide_context("root".to_string());
                 let _child = create_child_scope(p, |c| {
                     let _grandchild = create_child_scope(c, |_gc| {
-                        let val = use_context::<String>().unwrap();
+                        let val = use_context::<String>();
                         assert_eq!(val, Some("root".to_string()));
-                    })
-                    .unwrap();
-                })
-                .unwrap();
-            })
-            .unwrap();
+                    });
+                });
+            });
         });
     }
 
@@ -677,15 +743,13 @@ mod tests {
     fn child_context_overrides_parent() {
         with_test_runtime(|| {
             let _scope = create_scope(|p| {
-                provide_context(42_i32).unwrap();
+                provide_context(42_i32);
                 let _child = create_child_scope(p, |_c| {
-                    provide_context(99_i32).unwrap();
-                    let val = use_context::<i32>().unwrap();
+                    provide_context(99_i32);
+                    let val = use_context::<i32>();
                     assert_eq!(val, Some(99));
-                })
-                .unwrap();
-            })
-            .unwrap();
+                });
+            });
         });
     }
 
@@ -693,18 +757,17 @@ mod tests {
     fn use_context_missing_type_returns_none() {
         with_test_runtime(|| {
             let _scope = create_scope(|_s| {
-                provide_context(42_i32).unwrap();
-                let val = use_context::<String>().unwrap();
+                provide_context(42_i32);
+                let val = use_context::<String>();
                 assert_eq!(val, None);
-            })
-            .unwrap();
+            });
         });
     }
 
     #[test]
     fn provide_context_without_scope_returns_error() {
         with_test_runtime(|| {
-            let result = provide_context(42_i32);
+            let result = try_provide_context(42_i32);
             assert_eq!(result.unwrap_err(), ReactiveError::ScopeDisposed);
         });
     }
@@ -712,7 +775,7 @@ mod tests {
     #[test]
     fn use_context_without_scope_returns_none() {
         with_test_runtime(|| {
-            let val = use_context::<i32>().unwrap();
+            let val = use_context::<i32>();
             assert_eq!(val, None);
         });
     }

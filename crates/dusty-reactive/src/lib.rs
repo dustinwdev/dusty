@@ -9,14 +9,14 @@
 //! # use dusty_reactive::*;
 //! initialize_runtime();
 //!
-//! let count = create_signal(0).expect("runtime initialized");
-//! assert_eq!(count.get().unwrap(), 0);
+//! let count = create_signal(0);
+//! assert_eq!(count.get(), 0);
 //!
-//! count.set(5).unwrap();
-//! assert_eq!(count.get().unwrap(), 5);
+//! count.set(5);
+//! assert_eq!(count.get(), 5);
 //!
-//! count.update(|n| *n += 1).unwrap();
-//! assert_eq!(count.get().unwrap(), 6);
+//! count.update(|n| *n += 1);
+//! assert_eq!(count.get(), 6);
 //!
 //! dispose_runtime();
 //! ```
@@ -34,19 +34,26 @@ pub mod stats;
 pub(crate) mod subscriber;
 pub(crate) mod tracking;
 
-pub use batch::batch;
-pub use resource::{create_resource, dispose_resource, Resource, ResourceResolver, ResourceState};
+pub use batch::{batch, try_batch};
+pub use resource::{
+    create_resource, dispose_resource, try_create_resource, try_dispose_resource, Resource,
+    ResourceResolver, ResourceState,
+};
 pub use subscriber::untrack;
 
-pub use effect::{create_effect, dispose_effect, on_cleanup, Effect};
+pub use effect::{
+    create_effect, dispose_effect, on_cleanup, try_create_effect, try_dispose_effect, Effect,
+};
 pub use error::ReactiveError;
-pub use memo::{create_memo, dispose_memo, Memo};
+pub use memo::{create_memo, dispose_memo, try_create_memo, try_dispose_memo, Memo};
 pub use runtime::{dispose_runtime, initialize_runtime};
 pub use scope::{
-    create_child_scope, create_scope, dispose_scope, provide_context, use_context, Scope,
+    create_child_scope, create_scope, dispose_scope, provide_context, try_create_child_scope,
+    try_create_scope, try_dispose_scope, try_provide_context, try_use_context, use_context, Scope,
 };
 pub use signal::{
-    create_signal, create_signal_split, dispose_signal, ReadSignal, Signal, WriteSignal,
+    create_signal, create_signal_split, dispose_signal, try_create_signal, try_create_signal_split,
+    try_dispose_signal, ReadSignal, Signal, WriteSignal,
 };
 
 /// Internal helpers exposed for benchmarking. Not part of the public API.

@@ -131,8 +131,8 @@ pub fn current_tracking() -> Result<Option<SubscriberId>> {
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
-/// let sig = dusty_reactive::create_signal(42).unwrap();
-/// let val = dusty_reactive::untrack(|| sig.get().unwrap());
+/// let sig = dusty_reactive::create_signal(42);
+/// let val = dusty_reactive::untrack(|| sig.get());
 /// assert_eq!(val, 42);
 /// # dusty_reactive::dispose_runtime();
 /// ```
@@ -335,12 +335,12 @@ mod tests {
     #[test]
     fn untrack_suppresses_tracking() {
         with_test_runtime(|| {
-            let sig = crate::signal::create_signal(10).unwrap();
+            let sig = crate::signal::create_signal(10);
             let id = register_subscriber(|| {}).unwrap();
 
             push_tracking(id).unwrap();
             // Read inside untrack should NOT subscribe
-            let val = untrack(|| sig.get().unwrap());
+            let val = untrack(|| sig.get());
             assert_eq!(val, 10);
             let deps = pop_tracking().unwrap();
 
@@ -357,13 +357,13 @@ mod tests {
     #[test]
     fn untrack_restores_tracking_after() {
         with_test_runtime(|| {
-            let sig = crate::signal::create_signal(10).unwrap();
+            let sig = crate::signal::create_signal(10);
             let id = register_subscriber(|| {}).unwrap();
 
             push_tracking(id).unwrap();
             untrack(|| {});
             // Tracking should be restored — read registers subscriber
-            let _val = sig.get().unwrap();
+            let _val = sig.get();
             let deps = pop_tracking().unwrap();
 
             assert_eq!(deps.len(), 1);
@@ -380,12 +380,12 @@ mod tests {
     #[test]
     fn untrack_nested() {
         with_test_runtime(|| {
-            let sig = crate::signal::create_signal(5).unwrap();
+            let sig = crate::signal::create_signal(5);
             let id = register_subscriber(|| {}).unwrap();
 
             push_tracking(id).unwrap();
             let val = untrack(|| {
-                let inner = untrack(|| sig.get().unwrap());
+                let inner = untrack(|| sig.get());
                 inner + 1
             });
             assert_eq!(val, 6);
@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn untrack_panic_restores_tracking() {
         with_test_runtime(|| {
-            let sig = crate::signal::create_signal(0).unwrap();
+            let sig = crate::signal::create_signal(0);
             let id = register_subscriber(|| {}).unwrap();
 
             push_tracking(id).unwrap();
@@ -431,7 +431,7 @@ mod tests {
             assert_eq!(current_tracking().unwrap(), Some(id));
 
             // Signal reads should still register
-            let _val = sig.get().unwrap();
+            let _val = sig.get();
             let deps = pop_tracking().unwrap();
             assert_eq!(deps.len(), 1);
         });

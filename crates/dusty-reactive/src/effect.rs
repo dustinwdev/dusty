@@ -4,18 +4,22 @@
 //! re-runs whenever any dependency changes. Effects produce no value but can
 //! register cleanup functions via [`on_cleanup`].
 //!
+//! The default API ([`create_effect`], [`dispose_effect`]) panics on error.
+//! Use [`try_create_effect`] / [`try_dispose_effect`] for fallible variants
+//! that return `Result`.
+//!
 //! # Examples
 //!
 //! ```
 //! # dusty_reactive::initialize_runtime();
-//! let count = dusty_reactive::create_signal(0).unwrap();
+//! let count = dusty_reactive::create_signal(0);
 //! let effect = dusty_reactive::create_effect(move || {
-//!     let _val = count.get().unwrap();
+//!     let _val = count.get();
 //!     // side effect: log, update DOM, etc.
-//! }).unwrap();
+//! });
 //!
-//! count.set(1).unwrap(); // effect re-runs
-//! dusty_reactive::dispose_effect(&effect).unwrap();
+//! count.set(1); // effect re-runs
+//! dusty_reactive::dispose_effect(&effect);
 //! # dusty_reactive::dispose_runtime();
 //! ```
 
@@ -23,7 +27,7 @@ use std::cell::{Cell, RefCell};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::error::{ReactiveError, Result};
+use crate::error::{unwrap_reactive, ReactiveError, Result};
 use crate::runtime::SignalId;
 use crate::subscriber::{
     pop_tracking, push_tracking, register_subscriber, unregister_subscriber, SubscriberId,
@@ -98,10 +102,21 @@ struct EffectInner {
 /// Create an effect that runs immediately and re-runs whenever its
 /// dependencies change.
 ///
+/// # Panics
+///
+/// Panics if no runtime is initialized. Use [`try_create_effect`] for a
+/// fallible variant that returns `Result`.
+#[track_caller]
+pub fn create_effect(f: impl Fn() + 'static) -> Effect {
+    unwrap_reactive(try_create_effect(f), "create_effect")
+}
+
+/// Fallible version of [`create_effect`].
+///
 /// # Errors
 ///
-/// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
-pub fn create_effect(f: impl Fn() + 'static) -> Result<Effect> {
+/// Returns an error if no runtime is initialized.
+pub fn try_create_effect(f: impl Fn() + 'static) -> Result<Effect> {
     let dirty = Rc::new(Cell::new(false));
     let dirty_for_cb = Rc::clone(&dirty);
 
@@ -156,10 +171,21 @@ pub fn create_effect(f: impl Fn() + 'static) -> Result<Effect> {
 
 /// Dispose of an effect, running its cleanup functions and unsubscribing.
 ///
+/// # Panics
+///
+/// Panics if the effect was already disposed. Use [`try_dispose_effect`] for
+/// a fallible variant that returns `Result`.
+#[track_caller]
+pub fn dispose_effect(effect: &Effect) {
+    unwrap_reactive(try_dispose_effect(effect), "dispose_effect");
+}
+
+/// Fallible version of [`dispose_effect`].
+///
 /// # Errors
 ///
-/// Returns [`ReactiveError::EffectDisposed`] if the effect was already disposed.
-pub fn dispose_effect(effect: &Effect) -> Result<()> {
+/// Returns an error if the runtime is unavailable or the effect is disposed.
+pub fn try_dispose_effect(effect: &Effect) -> Result<()> {
     dispose_effect_inner(&effect.state)
 }
 
@@ -170,7 +196,7 @@ pub fn dispose_effect(effect: &Effect) -> Result<()> {
 pub fn on_cleanup(cleanup: impl FnOnce() + 'static) {
     CLEANUP_SINK.with(|sink| {
         let Ok(mut borrow) = sink.try_borrow_mut() else {
-            debug_assert!(false, "CLEANUP_SINK already borrowed during on_cleanup");
+            eprintln!("dusty: CLEANUP_SINK already borrowed during on_cleanup");
             return;
         };
         if let Some(ref mut vec) = *borrow {
@@ -209,7 +235,7 @@ pub(crate) fn flush_pending_effects() {
         for state in pending {
             if !state.disposed.get() && state.dirty.get() {
                 if let Err(e) = execute_effect(&state) {
-                    debug_assert!(false, "effect execution failed during flush: {e}");
+                    eprintln!("dusty: effect execution failed during flush: {e}");
                 }
             }
         }
@@ -341,8 +367,7 @@ mod tests {
 
             let _effect = create_effect(move || {
                 r.set(true);
-            })
-            .unwrap();
+            });
 
             assert!(ran.get());
         });
@@ -351,22 +376,21 @@ mod tests {
     #[test]
     fn effect_reruns_when_signal_changes() {
         with_test_runtime(|| {
-            let count = create_signal(0).unwrap();
+            let count = create_signal(0);
             let run_count = Rc::new(Cell::new(0));
             let rc = Rc::clone(&run_count);
 
             let _effect = create_effect(move || {
-                let _val = count.get().unwrap();
+                let _val = count.get();
                 rc.set(rc.get() + 1);
-            })
-            .unwrap();
+            });
 
             assert_eq!(run_count.get(), 1); // initial run
 
-            count.set(1).unwrap();
+            count.set(1);
             assert_eq!(run_count.get(), 2); // re-run
 
-            count.set(2).unwrap();
+            count.set(2);
             assert_eq!(run_count.get(), 3); // re-run again
         });
     }
@@ -374,24 +398,23 @@ mod tests {
     #[test]
     fn effect_tracks_multiple_signals() {
         with_test_runtime(|| {
-            let a = create_signal(1).unwrap();
-            let b = create_signal(2).unwrap();
+            let a = create_signal(1);
+            let b = create_signal(2);
             let run_count = Rc::new(Cell::new(0));
             let rc = Rc::clone(&run_count);
 
             let _effect = create_effect(move || {
-                let _va = a.get().unwrap();
-                let _vb = b.get().unwrap();
+                let _va = a.get();
+                let _vb = b.get();
                 rc.set(rc.get() + 1);
-            })
-            .unwrap();
+            });
 
             assert_eq!(run_count.get(), 1);
 
-            a.set(10).unwrap();
+            a.set(10);
             assert_eq!(run_count.get(), 2);
 
-            b.set(20).unwrap();
+            b.set(20);
             assert_eq!(run_count.get(), 3);
         });
     }
@@ -399,26 +422,25 @@ mod tests {
     #[test]
     fn effect_cleanup_runs_before_rerun() {
         with_test_runtime(|| {
-            let count = create_signal(0).unwrap();
+            let count = create_signal(0);
             let log = Rc::new(RefCell::new(Vec::<String>::new()));
             let l = Rc::clone(&log);
 
             let _effect = create_effect(move || {
-                let val = count.get().unwrap();
+                let val = count.get();
                 let l2 = Rc::clone(&l);
                 on_cleanup(move || {
                     l2.borrow_mut().push(format!("cleanup-{val}"));
                 });
                 l.borrow_mut().push(format!("run-{val}"));
-            })
-            .unwrap();
+            });
 
             assert_eq!(*log.borrow(), vec!["run-0"]);
 
-            count.set(1).unwrap();
+            count.set(1);
             assert_eq!(*log.borrow(), vec!["run-0", "cleanup-0", "run-1"]);
 
-            count.set(2).unwrap();
+            count.set(2);
             assert_eq!(
                 *log.borrow(),
                 vec!["run-0", "cleanup-0", "run-1", "cleanup-1", "run-2"]
@@ -435,11 +457,10 @@ mod tests {
             let effect = create_effect(move || {
                 let c2 = Rc::clone(&c);
                 on_cleanup(move || c2.set(true));
-            })
-            .unwrap();
+            });
 
             assert!(!cleaned.get());
-            dispose_effect(&effect).unwrap();
+            dispose_effect(&effect);
             assert!(cleaned.get());
         });
     }
@@ -457,10 +478,9 @@ mod tests {
                 on_cleanup(move || o2.borrow_mut().push(2));
                 let o3 = Rc::clone(&o);
                 on_cleanup(move || o3.borrow_mut().push(3));
-            })
-            .unwrap();
+            });
 
-            dispose_effect(&effect).unwrap();
+            dispose_effect(&effect);
             assert_eq!(*order.borrow(), vec![3, 2, 1]);
         });
     }
@@ -468,38 +488,37 @@ mod tests {
     #[test]
     fn effect_dynamic_dependencies() {
         with_test_runtime(|| {
-            let flag = create_signal(true).unwrap();
-            let a = create_signal(10).unwrap();
-            let b = create_signal(20).unwrap();
+            let flag = create_signal(true);
+            let a = create_signal(10);
+            let b = create_signal(20);
             let observed = Rc::new(Cell::new(0));
             let ob = Rc::clone(&observed);
 
             let _effect = create_effect(move || {
-                if flag.get().unwrap() {
-                    ob.set(a.get().unwrap());
+                if flag.get() {
+                    ob.set(a.get());
                 } else {
-                    ob.set(b.get().unwrap());
+                    ob.set(b.get());
                 }
-            })
-            .unwrap();
+            });
 
             assert_eq!(observed.get(), 10);
 
             // b is not a dependency, changing it should not re-run
             let run_before = observed.get();
-            b.set(30).unwrap();
+            b.set(30);
             assert_eq!(observed.get(), run_before);
 
             // Switch to b branch
-            flag.set(false).unwrap();
+            flag.set(false);
             assert_eq!(observed.get(), 30);
 
             // Now a is not a dependency
-            a.set(99).unwrap();
+            a.set(99);
             assert_eq!(observed.get(), 30);
 
             // b is a dependency
-            b.set(50).unwrap();
+            b.set(50);
             assert_eq!(observed.get(), 50);
         });
     }
@@ -507,20 +526,19 @@ mod tests {
     #[test]
     fn effect_untracked_no_subscription() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let run_count = Rc::new(Cell::new(0));
             let rc = Rc::clone(&run_count);
 
             let _effect = create_effect(move || {
-                let _val = sig.with_untracked(|v| *v).unwrap();
+                let _val = sig.with_untracked(|v| *v);
                 rc.set(rc.get() + 1);
-            })
-            .unwrap();
+            });
 
             assert_eq!(run_count.get(), 1);
 
             // Untracked read should not cause re-run
-            sig.set(1).unwrap();
+            sig.set(1);
             assert_eq!(run_count.get(), 1);
         });
     }
@@ -528,21 +546,20 @@ mod tests {
     #[test]
     fn disposed_effect_does_not_rerun() {
         with_test_runtime(|| {
-            let count = create_signal(0).unwrap();
+            let count = create_signal(0);
             let run_count = Rc::new(Cell::new(0));
             let rc = Rc::clone(&run_count);
 
             let effect = create_effect(move || {
-                let _val = count.get().unwrap();
+                let _val = count.get();
                 rc.set(rc.get() + 1);
-            })
-            .unwrap();
+            });
 
             assert_eq!(run_count.get(), 1);
 
-            dispose_effect(&effect).unwrap();
+            dispose_effect(&effect);
 
-            count.set(1).unwrap();
+            count.set(1);
             assert_eq!(run_count.get(), 1); // no re-run
         });
     }
@@ -550,7 +567,7 @@ mod tests {
     #[test]
     fn effect_reentrance_guard() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let run_count = Rc::new(Cell::new(0));
             let rc = Rc::clone(&run_count);
 
@@ -558,16 +575,15 @@ mod tests {
             // execution set dirty, and after the running guard is cleared the
             // effect is re-queued and converges.
             let _effect = create_effect(move || {
-                let val = sig.get().unwrap();
+                let val = sig.get();
                 rc.set(rc.get() + 1);
                 if val < 3 {
-                    let _ = sig.set(val + 1);
+                    sig.set(val + 1);
                 }
-            })
-            .unwrap();
+            });
 
             // Signal converges to 3
-            assert_eq!(sig.get().unwrap(), 3);
+            assert_eq!(sig.get(), 3);
             // Effect runs exactly 4 times: initial(0) + re-runs for 1, 2, 3
             assert_eq!(run_count.get(), 4);
         });
@@ -586,10 +602,10 @@ mod tests {
     #[test]
     fn double_dispose_effect_errors() {
         with_test_runtime(|| {
-            let effect = create_effect(|| {}).unwrap();
-            dispose_effect(&effect).unwrap();
+            let effect = create_effect(|| {});
+            dispose_effect(&effect);
             assert_eq!(
-                dispose_effect(&effect).unwrap_err(),
+                try_dispose_effect(&effect).unwrap_err(),
                 ReactiveError::EffectDisposed
             );
         });
@@ -598,15 +614,14 @@ mod tests {
     #[test]
     fn effect_panic_restores_tracking_stack() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
 
             // Create an effect that panics on first run
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 create_effect(move || {
-                    let _val = sig.get().unwrap();
+                    let _val = sig.get();
                     panic!("effect panic");
-                })
-                .unwrap();
+                });
             }));
             assert!(result.is_err());
 
@@ -615,12 +630,11 @@ mod tests {
             let ob = Rc::clone(&observed);
 
             let _effect2 = create_effect(move || {
-                ob.set(sig.get().unwrap());
-            })
-            .unwrap();
+                ob.set(sig.get());
+            });
 
             assert_eq!(observed.get(), 0);
-            sig.set(5).unwrap();
+            sig.set(5);
             assert_eq!(observed.get(), 5);
         });
     }
@@ -628,7 +642,7 @@ mod tests {
     #[test]
     fn effect_panic_resets_running_flag() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let should_panic = Rc::new(Cell::new(true));
             let sp = Rc::clone(&should_panic);
             let run_count = Rc::new(Cell::new(0));
@@ -637,13 +651,12 @@ mod tests {
             // Effect that panics conditionally
             let effect = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 create_effect(move || {
-                    let _val = sig.get().unwrap();
+                    let _val = sig.get();
                     rc.set(rc.get() + 1);
                     if sp.get() {
                         panic!("effect panic");
                     }
                 })
-                .unwrap()
             }));
 
             // Effect panicked during creation, so it wasn't fully created
@@ -654,11 +667,10 @@ mod tests {
             let observed = Rc::new(Cell::new(-1));
             let ob = Rc::clone(&observed);
             let _effect2 = create_effect(move || {
-                ob.set(sig.get().unwrap());
-            })
-            .unwrap();
+                ob.set(sig.get());
+            });
 
-            sig.set(42).unwrap();
+            sig.set(42);
             assert_eq!(observed.get(), 42);
         });
     }

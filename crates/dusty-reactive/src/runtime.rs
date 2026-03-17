@@ -201,20 +201,20 @@ mod tests {
     fn reinitialize_clears_stale_fresheners() {
         // Create signals/memos, re-initialize, verify no stale fresheners interfere.
         initialize_runtime();
-        let sig = crate::signal::create_signal(10).unwrap();
-        let _memo = crate::memo::create_memo(move || sig.get().unwrap() * 2).unwrap();
+        let sig = crate::signal::create_signal(10);
+        let _memo = crate::memo::create_memo(move || sig.get() * 2);
 
         // Re-initialize: should call dispose_runtime() first, clearing fresheners
         initialize_runtime();
 
         // Create a new signal and verify operations work cleanly
-        let sig2 = crate::signal::create_signal(5).unwrap();
-        sig2.set(7).unwrap();
-        assert_eq!(sig2.get().unwrap(), 7);
+        let sig2 = crate::signal::create_signal(5);
+        sig2.set(7);
+        assert_eq!(sig2.get(), 7);
 
         // Creating a new memo should also work without stale freshener interference
-        let memo2 = crate::memo::create_memo(move || sig2.get().unwrap() + 1).unwrap();
-        assert_eq!(memo2.get().unwrap(), 8);
+        let memo2 = crate::memo::create_memo(move || sig2.get() + 1);
+        assert_eq!(memo2.get(), 8);
 
         dispose_runtime();
     }

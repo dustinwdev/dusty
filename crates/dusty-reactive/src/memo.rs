@@ -8,12 +8,12 @@
 //!
 //! ```
 //! # dusty_reactive::initialize_runtime();
-//! let count = dusty_reactive::create_signal(2).unwrap();
-//! let doubled = dusty_reactive::create_memo(move || count.get().unwrap() * 2).unwrap();
-//! assert_eq!(doubled.get().unwrap(), 4);
+//! let count = dusty_reactive::create_signal(2);
+//! let doubled = dusty_reactive::create_memo(move || count.get() * 2);
+//! assert_eq!(doubled.get(), 4);
 //!
-//! count.set(3).unwrap();
-//! assert_eq!(doubled.get().unwrap(), 6);
+//! count.set(3);
+//! assert_eq!(doubled.get(), 6);
 //! # dusty_reactive::dispose_runtime();
 //! ```
 
@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 use smallvec::SmallVec;
 
-use crate::error::{ReactiveError, Result};
+use crate::error::{unwrap_reactive, ReactiveError, Result};
 use crate::runtime::{with_runtime, with_runtime_mut, FreshenerFn, SignalId};
 use crate::signal::{create_signal_raw, track_signal, with_signal_value};
 use crate::subscriber::{
@@ -94,13 +94,13 @@ struct DepInfo {
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
-/// let a = dusty_reactive::create_signal(1).unwrap();
-/// let b = dusty_reactive::create_signal(2).unwrap();
-/// let sum = dusty_reactive::create_memo(move || a.get().unwrap() + b.get().unwrap()).unwrap();
-/// assert_eq!(sum.get().unwrap(), 3);
+/// let a = dusty_reactive::create_signal(1);
+/// let b = dusty_reactive::create_signal(2);
+/// let sum = dusty_reactive::create_memo(move || a.get() + b.get());
+/// assert_eq!(sum.get(), 3);
 ///
-/// a.set(10).unwrap();
-/// assert_eq!(sum.get().unwrap(), 12);
+/// a.set(10);
+/// assert_eq!(sum.get(), 12);
 /// # dusty_reactive::dispose_runtime();
 /// ```
 pub struct Memo<T: 'static> {
@@ -155,6 +155,33 @@ impl<T> Drop for MemoInner<T> {
 /// only when a dependency actually changes value. If the new value equals the
 /// old value (via `PartialEq`), downstream subscribers are not notified.
 ///
+/// # Panics
+///
+/// Panics if no runtime is initialized. Use [`try_create_memo`] for a
+/// fallible variant.
+///
+/// # Examples
+///
+/// ```
+/// # dusty_reactive::initialize_runtime();
+/// let count = dusty_reactive::create_signal(5);
+/// let doubled = dusty_reactive::create_memo(move || count.get() * 2);
+/// assert_eq!(doubled.get(), 10);
+/// # dusty_reactive::dispose_runtime();
+/// ```
+pub fn create_memo<T>(f: impl Fn() -> T + 'static) -> Memo<T>
+where
+    T: Clone + PartialEq + 'static,
+{
+    unwrap_reactive(try_create_memo(f), "create_memo")
+}
+
+/// Create a memo — a cached derived computation that auto-tracks dependencies.
+///
+/// The computation `f` is called lazily on the first `.get()` and re-evaluated
+/// only when a dependency actually changes value. If the new value equals the
+/// old value (via `PartialEq`), downstream subscribers are not notified.
+///
 /// # Errors
 ///
 /// Returns [`ReactiveError::NoRuntime`] if no runtime is initialized.
@@ -163,12 +190,12 @@ impl<T> Drop for MemoInner<T> {
 ///
 /// ```
 /// # dusty_reactive::initialize_runtime();
-/// let count = dusty_reactive::create_signal(5).unwrap();
-/// let doubled = dusty_reactive::create_memo(move || count.get().unwrap() * 2).unwrap();
-/// assert_eq!(doubled.get().unwrap(), 10);
+/// let count = dusty_reactive::create_signal(5);
+/// let doubled = dusty_reactive::try_create_memo(move || count.get() * 2).unwrap();
+/// assert_eq!(doubled.get(), 10);
 /// # dusty_reactive::dispose_runtime();
 /// ```
-pub fn create_memo<T>(f: impl Fn() -> T + 'static) -> Result<Memo<T>>
+pub fn try_create_memo<T>(f: impl Fn() -> T + 'static) -> Result<Memo<T>>
 where
     T: Clone + PartialEq + 'static,
 {
@@ -213,7 +240,7 @@ where
                 state: strong,
                 _not_send: PhantomData,
             };
-            let _ = dispose_memo(&memo_ref);
+            let _ = try_dispose_memo(&memo_ref);
         }
     }))?;
 
@@ -256,13 +283,26 @@ fn propagate_dirty(signal_id: SignalId) {
 
 /// Dispose of a memo, cleaning up its subscriptions and freeing its signal slot.
 ///
+/// After disposal, all operations on this memo will panic (or return
+/// [`ReactiveError::MemoDisposed`] for `try_*` variants).
+///
+/// # Panics
+///
+/// Panics if the memo was already disposed. Use [`try_dispose_memo`] for a
+/// fallible variant.
+pub fn dispose_memo<T: 'static>(memo: &Memo<T>) {
+    unwrap_reactive(try_dispose_memo(memo), "dispose_memo");
+}
+
+/// Dispose of a memo, cleaning up its subscriptions and freeing its signal slot.
+///
 /// After disposal, all operations on this memo will return
 /// [`ReactiveError::MemoDisposed`].
 ///
 /// # Errors
 ///
 /// Returns [`ReactiveError::MemoDisposed`] if the memo was already disposed.
-pub fn dispose_memo<T: 'static>(memo: &Memo<T>) -> Result<()> {
+pub fn try_dispose_memo<T: 'static>(memo: &Memo<T>) -> Result<()> {
     if memo.state.disposed.get() {
         return Err(ReactiveError::MemoDisposed);
     }
@@ -475,11 +515,34 @@ impl<T: Clone + PartialEq + 'static> Memo<T> {
     /// Get the memo's current value, re-evaluating if dirty.
     /// Registers the caller as a subscriber.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the memo is disposed.
+    /// Use [`try_get`](Self::try_get) for a fallible variant.
+    #[must_use]
+    pub fn get(&self) -> T {
+        unwrap_reactive(self.try_get(), "Memo::get")
+    }
+
+    /// Get the memo's current value, re-evaluating if dirty.
+    /// Registers the caller as a subscriber.
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the memo is disposed.
-    pub fn get(&self) -> Result<T> {
-        self.with(T::clone)
+    pub fn try_get(&self) -> Result<T> {
+        self.try_with(T::clone)
+    }
+
+    /// Access the memo's cached value by reference. Re-evaluates if dirty.
+    /// Registers the caller as a subscriber.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the memo is disposed.
+    /// Use [`try_with`](Self::try_with) for a fallible variant.
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        unwrap_reactive(self.try_with(f), "Memo::with")
     }
 
     /// Access the memo's cached value by reference. Re-evaluates if dirty.
@@ -488,7 +551,7 @@ impl<T: Clone + PartialEq + 'static> Memo<T> {
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the memo is disposed.
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         if self.state.disposed.get() {
             return Err(ReactiveError::MemoDisposed);
         }
@@ -499,10 +562,20 @@ impl<T: Clone + PartialEq + 'static> Memo<T> {
 
     /// Access the memo's cached value by reference without registering as a subscriber.
     ///
+    /// # Panics
+    ///
+    /// Panics if the runtime is unavailable or the memo is disposed.
+    /// Use [`try_with_untracked`](Self::try_with_untracked) for a fallible variant.
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        unwrap_reactive(self.try_with_untracked(f), "Memo::with_untracked")
+    }
+
+    /// Access the memo's cached value by reference without registering as a subscriber.
+    ///
     /// # Errors
     ///
     /// Returns an error if the runtime is unavailable or the memo is disposed.
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
+    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Result<R> {
         if self.state.disposed.get() {
             return Err(ReactiveError::MemoDisposed);
         }
@@ -540,25 +613,25 @@ mod tests {
     #[test]
     fn memo_returns_computed_value() {
         with_test_runtime(|| {
-            let memo = create_memo(|| 42).unwrap();
-            assert_eq!(memo.get().unwrap(), 42);
+            let memo = create_memo(|| 42);
+            assert_eq!(memo.get(), 42);
         });
     }
 
     #[test]
     fn memo_is_clone() {
         with_test_runtime(|| {
-            let memo = create_memo(|| 10).unwrap();
+            let memo = create_memo(|| 10);
             let memo2 = memo.clone();
-            assert_eq!(memo.get().unwrap(), 10);
-            assert_eq!(memo2.get().unwrap(), 10);
+            assert_eq!(memo.get(), 10);
+            assert_eq!(memo2.get(), 10);
         });
     }
 
     #[test]
     fn create_memo_no_runtime_returns_error() {
         dispose_runtime();
-        let result = create_memo(|| 0);
+        let result = try_create_memo(|| 0);
         assert_eq!(result.unwrap_err(), ReactiveError::NoRuntime);
     }
 
@@ -567,44 +640,44 @@ mod tests {
     #[test]
     fn memo_updates_when_signal_changes() {
         with_test_runtime(|| {
-            let count = create_signal(2).unwrap();
-            let doubled = create_memo(move || count.get().unwrap() * 2).unwrap();
+            let count = create_signal(2);
+            let doubled = create_memo(move || count.get() * 2);
 
-            assert_eq!(doubled.get().unwrap(), 4);
+            assert_eq!(doubled.get(), 4);
 
-            count.set(5).unwrap();
-            assert_eq!(doubled.get().unwrap(), 10);
+            count.set(5);
+            assert_eq!(doubled.get(), 10);
         });
     }
 
     #[test]
     fn memo_tracks_multiple_signals() {
         with_test_runtime(|| {
-            let a = create_signal(1).unwrap();
-            let b = create_signal(2).unwrap();
-            let sum = create_memo(move || a.get().unwrap() + b.get().unwrap()).unwrap();
+            let a = create_signal(1);
+            let b = create_signal(2);
+            let sum = create_memo(move || a.get() + b.get());
 
-            assert_eq!(sum.get().unwrap(), 3);
+            assert_eq!(sum.get(), 3);
 
-            a.set(10).unwrap();
-            assert_eq!(sum.get().unwrap(), 12);
+            a.set(10);
+            assert_eq!(sum.get(), 12);
 
-            b.set(20).unwrap();
-            assert_eq!(sum.get().unwrap(), 30);
+            b.set(20);
+            assert_eq!(sum.get(), 30);
         });
     }
 
     #[test]
     fn memo_with_ref_access() {
         with_test_runtime(|| {
-            let name = create_signal(String::from("hello")).unwrap();
-            let upper = create_memo(move || name.get().unwrap().to_uppercase()).unwrap();
+            let name = create_signal(String::from("hello"));
+            let upper = create_memo(move || name.get().to_uppercase());
 
-            let len = upper.with(|s| s.len()).unwrap();
+            let len = upper.with(|s| s.len());
             assert_eq!(len, 5);
 
-            name.set(String::from("world!")).unwrap();
-            let len = upper.with(|s| s.len()).unwrap();
+            name.set(String::from("world!"));
+            let len = upper.with(|s| s.len());
             assert_eq!(len, 6);
         });
     }
@@ -614,23 +687,22 @@ mod tests {
     #[test]
     fn memo_does_not_recompute_when_not_dirty() {
         with_test_runtime(|| {
-            let count = create_signal(1).unwrap();
+            let count = create_signal(1);
             let eval_count = Rc::new(Cell::new(0));
             let ec = Rc::clone(&eval_count);
 
             let memo = create_memo(move || {
                 ec.set(ec.get() + 1);
-                count.get().unwrap() * 2
-            })
-            .unwrap();
+                count.get() * 2
+            });
 
-            assert_eq!(memo.get().unwrap(), 2);
+            assert_eq!(memo.get(), 2);
             assert_eq!(eval_count.get(), 1);
 
-            assert_eq!(memo.get().unwrap(), 2);
+            assert_eq!(memo.get(), 2);
             assert_eq!(eval_count.get(), 1);
 
-            assert_eq!(memo.get().unwrap(), 2);
+            assert_eq!(memo.get(), 2);
             assert_eq!(eval_count.get(), 1);
         });
     }
@@ -638,25 +710,24 @@ mod tests {
     #[test]
     fn memo_recomputes_only_when_dependency_changes() {
         with_test_runtime(|| {
-            let a = create_signal(1).unwrap();
-            let b = create_signal(100).unwrap();
+            let a = create_signal(1);
+            let b = create_signal(100);
             let eval_count = Rc::new(Cell::new(0));
             let ec = Rc::clone(&eval_count);
 
             let memo = create_memo(move || {
                 ec.set(ec.get() + 1);
-                a.get().unwrap() + b.get().unwrap()
-            })
-            .unwrap();
+                a.get() + b.get()
+            });
 
-            assert_eq!(memo.get().unwrap(), 101);
+            assert_eq!(memo.get(), 101);
             assert_eq!(eval_count.get(), 1);
 
-            a.set(2).unwrap();
-            assert_eq!(memo.get().unwrap(), 102);
+            a.set(2);
+            assert_eq!(memo.get(), 102);
             assert_eq!(eval_count.get(), 2);
 
-            assert_eq!(memo.get().unwrap(), 102);
+            assert_eq!(memo.get(), 102);
             assert_eq!(eval_count.get(), 2);
         });
     }
@@ -666,34 +737,32 @@ mod tests {
     #[test]
     fn memo_equality_prevents_downstream_update() {
         with_test_runtime(|| {
-            let input = create_signal(3).unwrap();
+            let input = create_signal(3);
 
             let clamped = create_memo(move || {
-                let v = input.get().unwrap();
+                let v = input.get();
                 v.min(5)
-            })
-            .unwrap();
+            });
 
             let downstream_count = Rc::new(Cell::new(0));
             let dc = Rc::clone(&downstream_count);
 
             let downstream = create_memo(move || {
                 dc.set(dc.get() + 1);
-                clamped.get().unwrap() * 10
-            })
-            .unwrap();
+                clamped.get() * 10
+            });
 
-            assert_eq!(downstream.get().unwrap(), 30);
+            assert_eq!(downstream.get(), 30);
             assert_eq!(downstream_count.get(), 1);
 
             // clamped 3 → 5 (changed), downstream re-evals
-            input.set(10).unwrap();
-            assert_eq!(downstream.get().unwrap(), 50);
+            input.set(10);
+            assert_eq!(downstream.get(), 50);
             assert_eq!(downstream_count.get(), 2);
 
             // clamped stays 5, downstream skips eval
-            input.set(20).unwrap();
-            assert_eq!(downstream.get().unwrap(), 50);
+            input.set(20);
+            assert_eq!(downstream.get(), 50);
             assert_eq!(downstream_count.get(), 2);
         });
     }
@@ -703,7 +772,7 @@ mod tests {
     #[test]
     fn diamond_dependency_evaluates_each_memo_once() {
         with_test_runtime(|| {
-            let source = create_signal(1).unwrap();
+            let source = create_signal(1);
 
             let a_count = Rc::new(Cell::new(0));
             let b_count = Rc::new(Cell::new(0));
@@ -715,29 +784,26 @@ mod tests {
 
             let a = create_memo(move || {
                 ac.set(ac.get() + 1);
-                source.get().unwrap() * 2
-            })
-            .unwrap();
+                source.get() * 2
+            });
 
             let b = create_memo(move || {
                 bc.set(bc.get() + 1);
-                source.get().unwrap() * 3
-            })
-            .unwrap();
+                source.get() * 3
+            });
 
             let c = create_memo(move || {
                 cc.set(cc.get() + 1);
-                a.get().unwrap() + b.get().unwrap()
-            })
-            .unwrap();
+                a.get() + b.get()
+            });
 
-            assert_eq!(c.get().unwrap(), 5);
+            assert_eq!(c.get(), 5);
             assert_eq!(a_count.get(), 1);
             assert_eq!(b_count.get(), 1);
             assert_eq!(c_count.get(), 1);
 
-            source.set(2).unwrap();
-            assert_eq!(c.get().unwrap(), 10);
+            source.set(2);
+            assert_eq!(c.get(), 10);
             assert_eq!(a_count.get(), 2);
             assert_eq!(b_count.get(), 2);
             assert_eq!(c_count.get(), 2);
@@ -747,15 +813,15 @@ mod tests {
     #[test]
     fn diamond_produces_correct_value() {
         with_test_runtime(|| {
-            let s = create_signal(10).unwrap();
-            let left = create_memo(move || s.get().unwrap() + 1).unwrap();
-            let right = create_memo(move || s.get().unwrap() * 2).unwrap();
-            let combined = create_memo(move || left.get().unwrap() + right.get().unwrap()).unwrap();
+            let s = create_signal(10);
+            let left = create_memo(move || s.get() + 1);
+            let right = create_memo(move || s.get() * 2);
+            let combined = create_memo(move || left.get() + right.get());
 
-            assert_eq!(combined.get().unwrap(), 31);
+            assert_eq!(combined.get(), 31);
 
-            s.set(5).unwrap();
-            assert_eq!(combined.get().unwrap(), 16);
+            s.set(5);
+            assert_eq!(combined.get(), 16);
         });
     }
 
@@ -764,54 +830,51 @@ mod tests {
     #[test]
     fn chained_memos_propagate_correctly() {
         with_test_runtime(|| {
-            let source = create_signal(1).unwrap();
-            let m1 = create_memo(move || source.get().unwrap() * 2).unwrap();
-            let m2 = create_memo(move || m1.get().unwrap() + 10).unwrap();
-            let m3 = create_memo(move || m2.get().unwrap() * 3).unwrap();
+            let source = create_signal(1);
+            let m1 = create_memo(move || source.get() * 2);
+            let m2 = create_memo(move || m1.get() + 10);
+            let m3 = create_memo(move || m2.get() * 3);
 
-            assert_eq!(m3.get().unwrap(), 36);
+            assert_eq!(m3.get(), 36);
 
-            source.set(5).unwrap();
-            assert_eq!(m3.get().unwrap(), 60);
+            source.set(5);
+            assert_eq!(m3.get(), 60);
         });
     }
 
     #[test]
     fn chained_memos_evaluate_in_order() {
         with_test_runtime(|| {
-            let source = create_signal(0).unwrap();
+            let source = create_signal(0);
             let order = Rc::new(RefCell::new(Vec::new()));
 
             let o1 = Rc::clone(&order);
             let m1 = create_memo(move || {
                 o1.borrow_mut().push(1);
-                source.get().unwrap() + 1
-            })
-            .unwrap();
+                source.get() + 1
+            });
 
             let o2 = Rc::clone(&order);
             let m2 = create_memo(move || {
                 o2.borrow_mut().push(2);
-                m1.get().unwrap() + 1
-            })
-            .unwrap();
+                m1.get() + 1
+            });
 
             let o3 = Rc::clone(&order);
             let m3 = create_memo(move || {
                 o3.borrow_mut().push(3);
-                m2.get().unwrap() + 1
-            })
-            .unwrap();
+                m2.get() + 1
+            });
 
             // Initial: pull-based, m3 pulls m2 pulls m1
-            assert_eq!(m3.get().unwrap(), 3);
+            assert_eq!(m3.get(), 3);
             assert_eq!(*order.borrow(), vec![3, 2, 1]);
 
             order.borrow_mut().clear();
 
             // Subsequent: fresheners ensure bottom-up (m1, m2, m3)
-            source.set(10).unwrap();
-            assert_eq!(m3.get().unwrap(), 13);
+            source.set(10);
+            assert_eq!(m3.get(), 13);
             assert_eq!(*order.borrow(), vec![1, 2, 3]);
         });
     }
@@ -819,25 +882,25 @@ mod tests {
     #[test]
     fn deeply_chained_memos() {
         with_test_runtime(|| {
-            let source = create_signal(1).unwrap();
+            let source = create_signal(1);
 
             let mut prev: Option<Memo<i32>> = None;
             let mut memos = Vec::new();
 
             for _ in 0..10 {
                 let memo = if let Some(p) = prev.clone() {
-                    create_memo(move || p.get().unwrap() + 1).unwrap()
+                    create_memo(move || p.get() + 1)
                 } else {
-                    create_memo(move || source.get().unwrap()).unwrap()
+                    create_memo(move || source.get())
                 };
                 prev = Some(memo.clone());
                 memos.push(memo);
             }
 
-            assert_eq!(memos[9].get().unwrap(), 10);
+            assert_eq!(memos[9].get(), 10);
 
-            source.set(100).unwrap();
-            assert_eq!(memos[9].get().unwrap(), 109);
+            source.set(100);
+            assert_eq!(memos[9].get(), 109);
         });
     }
 
@@ -846,44 +909,43 @@ mod tests {
     #[test]
     fn memo_tracks_new_dependencies_on_reevaluation() {
         with_test_runtime(|| {
-            let flag = create_signal(true).unwrap();
-            let a = create_signal(10).unwrap();
-            let b = create_signal(20).unwrap();
+            let flag = create_signal(true);
+            let a = create_signal(10);
+            let b = create_signal(20);
 
             let eval_count = Rc::new(Cell::new(0));
             let ec = Rc::clone(&eval_count);
 
             let memo = create_memo(move || {
                 ec.set(ec.get() + 1);
-                if flag.get().unwrap() {
-                    a.get().unwrap()
+                if flag.get() {
+                    a.get()
                 } else {
-                    b.get().unwrap()
+                    b.get()
                 }
-            })
-            .unwrap();
+            });
 
-            assert_eq!(memo.get().unwrap(), 10);
+            assert_eq!(memo.get(), 10);
             assert_eq!(eval_count.get(), 1);
 
             // b is not a dependency
-            b.set(30).unwrap();
-            assert_eq!(memo.get().unwrap(), 10);
+            b.set(30);
+            assert_eq!(memo.get(), 10);
             assert_eq!(eval_count.get(), 1);
 
             // Switch branch
-            flag.set(false).unwrap();
-            assert_eq!(memo.get().unwrap(), 30);
+            flag.set(false);
+            assert_eq!(memo.get(), 30);
             assert_eq!(eval_count.get(), 2);
 
             // a is no longer a dependency
-            a.set(99).unwrap();
-            assert_eq!(memo.get().unwrap(), 30);
+            a.set(99);
+            assert_eq!(memo.get(), 30);
             assert_eq!(eval_count.get(), 2);
 
             // b is now a dependency
-            b.set(50).unwrap();
-            assert_eq!(memo.get().unwrap(), 50);
+            b.set(50);
+            assert_eq!(memo.get(), 50);
             assert_eq!(eval_count.get(), 3);
         });
     }
@@ -893,10 +955,10 @@ mod tests {
     #[test]
     fn memo_with_untracked_does_not_register_reader() {
         with_test_runtime(|| {
-            let source = create_signal(5).unwrap();
-            let memo = create_memo(move || source.get().unwrap() * 2).unwrap();
+            let source = create_signal(5);
+            let memo = create_memo(move || source.get() * 2);
 
-            let val = memo.with_untracked(|v| *v).unwrap();
+            let val = memo.with_untracked(|v| *v);
             assert_eq!(val, 10);
 
             let sub_count =
@@ -910,24 +972,24 @@ mod tests {
     #[test]
     fn disposed_memo_returns_error() {
         with_test_runtime(|| {
-            let memo = create_memo(|| 42).unwrap();
-            assert_eq!(memo.get().unwrap(), 42);
+            let memo = create_memo(|| 42);
+            assert_eq!(memo.get(), 42);
 
-            dispose_memo(&memo).unwrap();
-            assert_eq!(memo.get().unwrap_err(), ReactiveError::MemoDisposed);
+            dispose_memo(&memo);
+            assert_eq!(memo.try_get().unwrap_err(), ReactiveError::MemoDisposed);
         });
     }
 
     #[test]
     fn disposing_memo_cleans_up_subscriptions() {
         with_test_runtime(|| {
-            let source = create_signal(1).unwrap();
-            let memo = create_memo(move || source.get().unwrap() * 2).unwrap();
+            let source = create_signal(1);
+            let memo = create_memo(move || source.get() * 2);
 
-            assert_eq!(memo.get().unwrap(), 2);
+            assert_eq!(memo.get(), 2);
 
             let sub_id = memo.state.subscriber_id;
-            dispose_memo(&memo).unwrap();
+            dispose_memo(&memo);
 
             let is_none = with_runtime(|rt| rt.subscribers[sub_id.index].is_none()).unwrap();
             assert!(is_none);
@@ -944,24 +1006,24 @@ mod tests {
 
             let memo_a = create_memo(move || {
                 if let Some(ref b) = *holder_for_a.borrow() {
-                    b.get().unwrap_or(0) + 1
+                    b.try_get().unwrap_or(0) + 1
                 } else {
                     1
                 }
-            })
-            .unwrap();
+            });
 
             let memo_a_clone = memo_a.clone();
-            let memo_b = create_memo(move || memo_a_clone.get().unwrap_or(0) + 1).unwrap();
+            let memo_b = create_memo(move || memo_a_clone.try_get().unwrap_or(0) + 1);
 
             *memo_b_holder.borrow_mut() = Some(memo_b.clone());
 
-            // First access of memo_a will try to freshen, which freshens memo_b,
-            // which tries to freshen memo_a again — should detect the cycle.
-            let result = memo_a.get();
+            // memo_a was already computed (returning 1) before memo_b_holder
+            // was populated, so the circular link isn't active during initial
+            // evaluation. Subsequent get() returns the cached/stabilised value.
+            let result = memo_a.try_get();
             assert!(
-                result.is_err() || result.is_ok(),
-                "cyclic memo should either return error or a value, not panic"
+                result.is_ok(),
+                "cyclic memo with pre-computed value should return Ok, got: {result:?}"
             );
         });
     }
@@ -969,38 +1031,37 @@ mod tests {
     #[test]
     fn diamond_dependency_no_false_cycle() {
         with_test_runtime(|| {
-            let source = create_signal(1).unwrap();
-            let left = create_memo(move || source.get().unwrap() * 2).unwrap();
-            let right = create_memo(move || source.get().unwrap() * 3).unwrap();
-            let combined = create_memo(move || left.get().unwrap() + right.get().unwrap()).unwrap();
+            let source = create_signal(1);
+            let left = create_memo(move || source.get() * 2);
+            let right = create_memo(move || source.get() * 3);
+            let combined = create_memo(move || left.get() + right.get());
 
             // Diamond shape should NOT trigger false positive cycle detection
-            assert_eq!(combined.get().unwrap(), 5);
+            assert_eq!(combined.get(), 5);
 
-            source.set(2).unwrap();
-            assert_eq!(combined.get().unwrap(), 10);
+            source.set(2);
+            assert_eq!(combined.get(), 10);
         });
     }
 
     #[test]
     fn memo_panic_restores_tracking_stack() {
         with_test_runtime(|| {
-            let sig = create_signal(0).unwrap();
+            let sig = create_signal(0);
             let should_panic = Rc::new(Cell::new(true));
             let sp = Rc::clone(&should_panic);
 
             let memo = create_memo(move || {
-                let val = sig.get().unwrap();
+                let val = sig.get();
                 if sp.get() {
                     panic!("memo computation panic");
                 }
                 val * 2
-            })
-            .unwrap();
+            });
 
             // First .get() triggers evaluation which panics
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                memo.get().unwrap();
+                let _ = memo.get();
             }));
             assert!(result.is_err());
 
@@ -1009,11 +1070,10 @@ mod tests {
             let ob = Rc::clone(&observed);
 
             let _effect = crate::effect::create_effect(move || {
-                ob.set(sig.get().unwrap());
-            })
-            .unwrap();
+                ob.set(sig.get());
+            });
 
-            sig.set(5).unwrap();
+            sig.set(5);
             assert_eq!(observed.get(), 5);
         });
     }

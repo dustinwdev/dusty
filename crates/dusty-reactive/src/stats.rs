@@ -16,7 +16,7 @@ use crate::runtime::with_runtime;
 /// use dusty_reactive::stats::runtime_stats;
 ///
 /// initialize_runtime();
-/// let _sig = create_signal(42).unwrap();
+/// let _sig = create_signal(42);
 /// let stats = runtime_stats().unwrap();
 /// assert_eq!(stats.live_signals, 1);
 /// dispose_runtime();
@@ -68,8 +68,8 @@ pub struct SignalStats {
 /// use dusty_reactive::stats::runtime_stats;
 ///
 /// initialize_runtime();
-/// let _ = create_signal(10).unwrap();
-/// let _ = create_signal(20).unwrap();
+/// let _ = create_signal(10);
+/// let _ = create_signal(20);
 ///
 /// let stats = runtime_stats().unwrap();
 /// assert_eq!(stats.live_signals, 2);
@@ -141,8 +141,8 @@ mod tests {
     #[test]
     fn counts_live_signals() {
         with_test_runtime(|| {
-            let _s1 = crate::signal::create_signal(1).unwrap();
-            let _s2 = crate::signal::create_signal(2).unwrap();
+            let _s1 = crate::signal::create_signal(1);
+            let _s2 = crate::signal::create_signal(2);
 
             let stats = runtime_stats().unwrap();
             assert_eq!(stats.total_signals, 2);
@@ -154,9 +154,9 @@ mod tests {
     #[test]
     fn disposed_signal_tracked() {
         with_test_runtime(|| {
-            let s1 = crate::signal::create_signal(1).unwrap();
-            let _s2 = crate::signal::create_signal(2).unwrap();
-            crate::signal::dispose_signal(s1).unwrap();
+            let s1 = crate::signal::create_signal(1);
+            let _s2 = crate::signal::create_signal(2);
+            crate::signal::dispose_signal(s1);
 
             let stats = runtime_stats().unwrap();
             assert_eq!(stats.total_signals, 2);
@@ -169,9 +169,9 @@ mod tests {
     #[test]
     fn signal_version_increments() {
         with_test_runtime(|| {
-            let s = crate::signal::create_signal(0).unwrap();
-            s.set(1).unwrap();
-            s.set(2).unwrap();
+            let s = crate::signal::create_signal(0);
+            s.set(1);
+            s.set(2);
 
             let stats = runtime_stats().unwrap();
             assert_eq!(stats.signals[0].version, 2);
@@ -181,11 +181,10 @@ mod tests {
     #[test]
     fn subscriber_count_tracked() {
         with_test_runtime(|| {
-            let s = crate::signal::create_signal(0).unwrap();
+            let s = crate::signal::create_signal(0);
             let _effect = crate::effect::create_effect(move || {
                 let _ = s.get();
-            })
-            .unwrap();
+            });
 
             let stats = runtime_stats().unwrap();
             assert!(stats.signals[0].subscriber_count > 0);
@@ -195,8 +194,8 @@ mod tests {
     #[test]
     fn live_subscribers_tracked() {
         with_test_runtime(|| {
-            let _s = crate::signal::create_signal(0).unwrap();
-            let _effect = crate::effect::create_effect(|| {}).unwrap();
+            let _s = crate::signal::create_signal(0);
+            let _effect = crate::effect::create_effect(|| {});
 
             let stats = runtime_stats().unwrap();
             assert!(stats.live_subscribers > 0);
@@ -206,7 +205,7 @@ mod tests {
     #[test]
     fn scope_counts() {
         with_test_runtime(|| {
-            let _scope = crate::scope::create_scope(|_cx| {}).unwrap();
+            let _scope = crate::scope::create_scope(|_cx| {});
 
             let stats = runtime_stats().unwrap();
             assert!(stats.total_scopes > 0);
