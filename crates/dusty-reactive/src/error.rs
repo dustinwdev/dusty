@@ -51,6 +51,40 @@ impl std::error::Error for ReactiveError {}
 /// A specialized `Result` type for reactive operations.
 pub type Result<T> = std::result::Result<T, ReactiveError>;
 
+/// Unwrap a reactive `Result`, panicking with a diagnostic message on `Err`.
+///
+/// The panic message includes the operation name, error variant, and a hint
+/// to use the `try_*` fallible variant for error handling.
+///
+/// `#[track_caller]` ensures the panic reports the user's call site, not this
+/// function.
+///
+/// # Panics
+///
+/// Panics if `result` is `Err`.
+#[track_caller]
+#[inline]
+pub fn unwrap_reactive<T>(result: Result<T>, context: &str) -> T {
+    match result {
+        Ok(val) => val,
+        Err(err) => panic!(
+            "dusty reactive error in `{context}`: {err}\n\
+             \n\
+             This is a programming bug — common causes:\n\
+             - No runtime: call `initialize_runtime()` before using reactive primitives\n\
+             - Use-after-dispose: a signal/memo/effect/scope was used after its scope was disposed\n\
+             - Re-entrant borrow: signal read/write from inside a signal write\n\
+             \n\
+             Hint: use the `try_{fn_name}` variant if you need a Result instead of a panic",
+            fn_name = context
+                .rsplit("::")
+                .next()
+                .unwrap_or(context)
+                .trim_start_matches("try_"),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +158,25 @@ mod tests {
 
         let err: Result<i32> = Err(ReactiveError::NoRuntime);
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn unwrap_reactive_returns_ok_value() {
+        let result: Result<i32> = Ok(42);
+        assert_eq!(unwrap_reactive(result, "Signal::get"), 42);
+    }
+
+    #[test]
+    #[should_panic(expected = "dusty reactive error in `Signal::get`")]
+    fn unwrap_reactive_panics_on_err() {
+        let result: Result<i32> = Err(ReactiveError::SignalDisposed);
+        unwrap_reactive(result, "Signal::get");
+    }
+
+    #[test]
+    #[should_panic(expected = "try_get")]
+    fn unwrap_reactive_panic_message_includes_try_hint() {
+        let result: Result<i32> = Err(ReactiveError::NoRuntime);
+        unwrap_reactive(result, "Signal::get");
     }
 }
