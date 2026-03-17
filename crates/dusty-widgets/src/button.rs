@@ -142,9 +142,12 @@ impl View for Button {
             TextContent::Dynamic(f) => text_dynamic(f),
         };
 
+        let label_str = text_child.current_text().into_owned();
+
         let mut builder = el("Button", cx)
             .attr("variant", variant_str)
             .attr("disabled", self.disabled)
+            .attr("label", label_str)
             .style(styled)
             .child_text(text_child);
 
@@ -308,6 +311,18 @@ mod tests {
             assert_eq!(style.width, Some(200.0));
             // Base padding should still be present
             assert_eq!(style.padding, Edges::xy(16.0, 8.0));
+        });
+    }
+
+    #[test]
+    fn button_sets_label_attr() {
+        with_scope(|cx| {
+            let node = Button::new("Submit").build(cx);
+            let el = extract_element(&node);
+            assert_eq!(
+                el.attr("label"),
+                Some(&AttributeValue::String("Submit".into()))
+            );
         });
     }
 

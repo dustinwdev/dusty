@@ -25,6 +25,9 @@ pub trait TextMeasure {
     ///
     /// - `max_width`: if `Some`, text should wrap at this width.
     /// - `font`: font style properties for sizing.
+    ///
+    /// Implementations must not panic. If measurement fails (e.g. due to a
+    /// borrow conflict), return `(0.0, 0.0)` and log the error.
     fn measure(&self, text: &str, max_width: Option<f32>, font: &FontStyle) -> (f32, f32);
 }
 

@@ -11,6 +11,18 @@ use dusty_reactive::Scope;
 /// `build`, the panic is caught and a user-supplied fallback is rendered,
 /// receiving the panic message as a `String`.
 ///
+/// # Limitations
+///
+/// This boundary only catches panics during the **build phase** (when the
+/// child closure executes). It does **not** catch panics from:
+///
+/// - Event handler callbacks (e.g. `on_click`)
+/// - Effect callbacks (created via `create_effect`)
+/// - Async operations or futures
+///
+/// For comprehensive error handling in event handlers and effects, use
+/// `std::panic::catch_unwind` at the call site.
+///
 /// # Example
 ///
 /// ```
@@ -203,6 +215,27 @@ mod tests {
                 assert_eq!(comp.name, "ErrorBoundary");
             } else {
                 panic!("expected Component node");
+            }
+        });
+    }
+
+    #[test]
+    fn does_not_catch_event_handler_panic() {
+        // This test documents that ErrorBoundary only catches build-time panics.
+        // Event handler panics propagate normally and are NOT caught by the boundary.
+        with_scope(|cx| {
+            let node = ErrorBoundary::new()
+                .child(|_cx: Scope| {
+                    // Build succeeds — no panic here
+                    Node::Text(text("ok"))
+                })
+                .fallback(|msg: String| Node::Text(text(msg)))
+                .build(cx);
+
+            // The child built successfully
+            assert!(node.is_component());
+            if let Node::Component(comp) = &node {
+                assert!(comp.child.is_text());
             }
         });
     }

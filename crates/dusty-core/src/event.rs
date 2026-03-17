@@ -290,7 +290,8 @@ pub struct EventContext {
 
 impl EventContext {
     /// Creates a new context for the given target path.
-    pub(crate) const fn new(target_path: Vec<usize>) -> Self {
+    #[must_use]
+    pub const fn new(target_path: Vec<usize>) -> Self {
         Self {
             stopped: Cell::new(false),
             immediate_stopped: Cell::new(false),

@@ -500,13 +500,13 @@ fn compute_uv(
     }
 }
 
-/// Simple string hash for generating deterministic image IDs.
+/// Hashes a string to produce a deterministic image ID using `SipHash`.
 fn hash_string(s: &str) -> u64 {
-    let mut hash: u64 = 5381;
-    for byte in s.bytes() {
-        hash = hash.wrapping_mul(33).wrapping_add(u64::from(byte));
-    }
-    hash
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Module alias for canvas command types used in the renderer.
@@ -1073,6 +1073,18 @@ mod tests {
             // No background and no canvas commands → empty
             assert!(cmds.is_empty(), "empty canvas should produce no commands");
         });
+    }
+
+    #[test]
+    fn hash_string_known_djb2_collision_produces_distinct_ids() {
+        // "Az" and "BY" collide under DJB2 but not under SipHash
+        use super::hash_string;
+        let h1 = hash_string("Az");
+        let h2 = hash_string("BY");
+        assert_ne!(
+            h1, h2,
+            "DJB2 collision pair must produce distinct SipHash values"
+        );
     }
 
     #[test]

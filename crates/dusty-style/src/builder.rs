@@ -16,6 +16,11 @@ use crate::{Color, Corners, Edges, FontSlant, FontWeight, Style};
 
 impl Style {
     /// Set all padding from a spacing scale key (`key * 4.0` px).
+    ///
+    /// This sets **all four sides** at once — any prior per-side padding
+    /// (e.g. from [`px`](Self::px) or [`py`](Self::py)) is overwritten.
+    /// Follows Tailwind's last-writer-wins semantics: `Style::default().px(4.0).p(2.0)`
+    /// results in all-8px padding, not mixed.
     #[must_use]
     pub fn p(mut self, key: f32) -> Self {
         self.padding = Edges::all(tokens::spacing(key));
@@ -832,28 +837,32 @@ impl Style {
     /// Apply style overrides for the hover state.
     #[must_use]
     pub fn hover(mut self, f: impl FnOnce(Self) -> Self) -> Self {
-        self.hover = Some(Box::new(f(Self::default())));
+        let base = self.hover.take().map_or_else(Self::default, |b| *b);
+        self.hover = Some(Box::new(f(base)));
         self
     }
 
     /// Apply style overrides for the focus state.
     #[must_use]
     pub fn focus(mut self, f: impl FnOnce(Self) -> Self) -> Self {
-        self.focus = Some(Box::new(f(Self::default())));
+        let base = self.focus.take().map_or_else(Self::default, |b| *b);
+        self.focus = Some(Box::new(f(base)));
         self
     }
 
     /// Apply style overrides for the active (pressed) state.
     #[must_use]
     pub fn active(mut self, f: impl FnOnce(Self) -> Self) -> Self {
-        self.active = Some(Box::new(f(Self::default())));
+        let base = self.active.take().map_or_else(Self::default, |b| *b);
+        self.active = Some(Box::new(f(base)));
         self
     }
 
     /// Apply style overrides for the disabled state.
     #[must_use]
     pub fn disabled(mut self, f: impl FnOnce(Self) -> Self) -> Self {
-        self.disabled = Some(Box::new(f(Self::default())));
+        let base = self.disabled.take().map_or_else(Self::default, |b| *b);
+        self.disabled = Some(Box::new(f(base)));
         self
     }
 
@@ -1507,5 +1516,48 @@ mod tests {
         assert_eq!(s.font.size, Some(14.0));
         assert_eq!(s.font.weight, Some(FontWeight::BOLD));
         assert_eq!(s.foreground, Palette::SLATE.get(900));
+    }
+
+    // -- Padding last-writer-wins --
+
+    #[test]
+    fn p_after_px_overrides_horizontal() {
+        let s = Style::default().px(4.0).p(2.0);
+        let val = crate::tokens::spacing(2.0);
+        assert_eq!(s.padding, Edges::all(val));
+    }
+
+    #[test]
+    fn px_after_p_overrides_horizontal_only() {
+        let s = Style::default().p(2.0).px(4.0);
+        let p_val = crate::tokens::spacing(2.0);
+        let px_val = crate::tokens::spacing(4.0);
+        assert_eq!(s.padding.top, Some(p_val));
+        assert_eq!(s.padding.bottom, Some(p_val));
+        assert_eq!(s.padding.left, Some(px_val));
+        assert_eq!(s.padding.right, Some(px_val));
+    }
+
+    // -- State modifier merging --
+
+    #[test]
+    fn hover_called_twice_merges() {
+        let s = Style::default()
+            .hover(|s| s.bg(Color::rgb(1.0, 0.0, 0.0)))
+            .hover(|s| s.text_color(Color::WHITE));
+        let h = s.hover.as_ref().unwrap();
+        // Both properties should be set
+        assert_eq!(h.background, Some(Color::rgb(1.0, 0.0, 0.0)));
+        assert_eq!(h.foreground, Some(Color::WHITE));
+    }
+
+    #[test]
+    fn hover_second_call_can_override() {
+        let s = Style::default()
+            .hover(|s| s.bg(Color::rgb(1.0, 0.0, 0.0)))
+            .hover(|s| s.bg(Color::rgb(0.0, 0.0, 1.0)));
+        let h = s.hover.as_ref().unwrap();
+        // Second call should override
+        assert_eq!(h.background, Some(Color::rgb(0.0, 0.0, 1.0)));
     }
 }

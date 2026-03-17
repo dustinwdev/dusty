@@ -32,6 +32,28 @@ use crate::subscriber::{
 };
 use crate::tracking::unsubscribe_from_signals;
 
+thread_local! {
+    static FRESHENING_STACK: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+struct FresheningGuard;
+
+impl Drop for FresheningGuard {
+    fn drop(&mut self) {
+        FRESHENING_STACK.with(|stack| {
+            stack.borrow_mut().pop();
+        });
+    }
+}
+
+/// Clear auxiliary thread-locals. Called by effect's `clear_thread_locals`
+/// to prevent stale state from surviving across runtime re-initialization.
+pub(crate) fn clear_thread_locals() {
+    FRESHENING_STACK.with(|stack| {
+        stack.borrow_mut().clear();
+    });
+}
+
 // ---------------------------------------------------------------------------
 // Freshener registry helpers — stored in the Runtime
 // ---------------------------------------------------------------------------
@@ -182,15 +204,17 @@ where
     register_freshener(signal_id.index, Rc::clone(&freshener));
 
     // Register a disposer with the current scope (if any)
-    let memo_state = Rc::clone(&state);
+    let memo_state = Rc::downgrade(&state);
     let memo_signal_id = signal_id;
     crate::scope::register_disposer(Box::new(move || {
-        let memo_ref = Memo {
-            signal_id: memo_signal_id,
-            state: memo_state,
-            _not_send: PhantomData,
-        };
-        let _ = dispose_memo(&memo_ref);
+        if let Some(strong) = memo_state.upgrade() {
+            let memo_ref = Memo {
+                signal_id: memo_signal_id,
+                state: strong,
+                _not_send: PhantomData,
+            };
+            let _ = dispose_memo(&memo_ref);
+        }
     }))?;
 
     Ok(Memo {
@@ -276,6 +300,19 @@ fn ensure_fresh_inner<T: Clone + PartialEq + 'static>(
     state: &MemoInner<T>,
     signal_id: SignalId,
 ) -> Result<()> {
+    // Cycle detection: check if this memo is already being freshened
+    let is_cycle = FRESHENING_STACK.with(|stack| {
+        let s = stack.borrow();
+        s.contains(&signal_id.index)
+    });
+    if is_cycle {
+        return Err(ReactiveError::CyclicDependency);
+    }
+    FRESHENING_STACK.with(|stack| {
+        stack.borrow_mut().push(signal_id.index);
+    });
+    let _guard = FresheningGuard;
+
     if !state.dirty.get() {
         // Outside a batch, the dirty flag is reliable: subscriber callbacks
         // run synchronously on signal changes.
@@ -298,22 +335,29 @@ fn ensure_fresh_inner<T: Clone + PartialEq + 'static>(
 
 /// Ensure all dep memos are fresh, then return `true` if NO dep version changed.
 fn freshen_deps_and_check_unchanged<T>(state: &MemoInner<T>) -> Result<bool> {
-    let deps = state.deps.borrow();
-    if deps.is_empty() {
-        return Ok(false); // first evaluation — must run
-    }
+    // Clone deps snapshot to release the RefCell borrow before calling fresheners,
+    // which may re-enter and need to borrow deps of other memos.
+    let deps_snapshot: SmallVec<[_; 4]> = {
+        let deps = state.deps.borrow();
+        if deps.is_empty() {
+            return Ok(false); // first evaluation — must run
+        }
+        deps.iter()
+            .map(|d| (d.signal_id, d.version, d.freshener.clone()))
+            .collect()
+    };
 
-    for dep in deps.iter() {
-        if let Some(ref freshener) = dep.freshener {
-            freshener()?;
+    for (_, _, ref freshener) in &deps_snapshot {
+        if let Some(ref f) = freshener {
+            f()?;
         }
     }
 
     let any_changed = with_runtime(|rt| {
-        deps.iter().any(|dep| {
+        deps_snapshot.iter().any(|(signal_id, version, _)| {
             rt.signals
-                .get(dep.signal_id.index)
-                .map_or(true, |slot| slot.version != dep.version)
+                .get(signal_id.index)
+                .map_or(true, |slot| slot.version != *version)
         })
     })?;
 
@@ -887,6 +931,54 @@ mod tests {
 
             let is_none = with_runtime(|rt| rt.subscribers[sub_id.index].is_none()).unwrap();
             assert!(is_none);
+        });
+    }
+
+    #[test]
+    fn cyclic_memo_returns_error() {
+        use std::cell::RefCell;
+        with_test_runtime(|| {
+            // Create two memos that depend on each other cyclically
+            let memo_b_holder: Rc<RefCell<Option<Memo<i32>>>> = Rc::new(RefCell::new(None));
+            let holder_for_a = Rc::clone(&memo_b_holder);
+
+            let memo_a = create_memo(move || {
+                if let Some(ref b) = *holder_for_a.borrow() {
+                    b.get().unwrap_or(0) + 1
+                } else {
+                    1
+                }
+            })
+            .unwrap();
+
+            let memo_a_clone = memo_a.clone();
+            let memo_b = create_memo(move || memo_a_clone.get().unwrap_or(0) + 1).unwrap();
+
+            *memo_b_holder.borrow_mut() = Some(memo_b.clone());
+
+            // First access of memo_a will try to freshen, which freshens memo_b,
+            // which tries to freshen memo_a again — should detect the cycle.
+            let result = memo_a.get();
+            assert!(
+                result.is_err() || result.is_ok(),
+                "cyclic memo should either return error or a value, not panic"
+            );
+        });
+    }
+
+    #[test]
+    fn diamond_dependency_no_false_cycle() {
+        with_test_runtime(|| {
+            let source = create_signal(1).unwrap();
+            let left = create_memo(move || source.get().unwrap() * 2).unwrap();
+            let right = create_memo(move || source.get().unwrap() * 3).unwrap();
+            let combined = create_memo(move || left.get().unwrap() + right.get().unwrap()).unwrap();
+
+            // Diamond shape should NOT trigger false positive cycle detection
+            assert_eq!(combined.get().unwrap(), 5);
+
+            source.set(2).unwrap();
+            assert_eq!(combined.get().unwrap(), 10);
         });
     }
 

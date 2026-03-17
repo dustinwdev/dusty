@@ -126,14 +126,22 @@ impl View for ScrollView {
         };
 
         let on_scroll = self.on_scroll;
+        let scroll_axis = self.axis;
         let mut builder = el("ScrollView", cx)
             .attr("axis", axis_str)
             .style(merged)
             .data(signal)
             .on_scroll(move |_ctx: &EventContext, e: &ScrollEvent| {
                 let current = signal.get().unwrap_or((0.0, 0.0));
-                let new_offset = (current.0 + e.delta_x, current.1 + e.delta_y);
-                let _ = signal.set(new_offset);
+                let raw = (current.0 + e.delta_x, current.1 + e.delta_y);
+                // Clamp: lower bound to 0.0, zero out irrelevant axis
+                // TODO: clamp upper bound when content_size is available from layout
+                let clamped = match scroll_axis {
+                    ScrollAxis::Vertical => (0.0, raw.1.max(0.0)),
+                    ScrollAxis::Horizontal => (raw.0.max(0.0), 0.0),
+                    ScrollAxis::Both => (raw.0.max(0.0), raw.1.max(0.0)),
+                };
+                let _ = signal.set(clamped);
                 if let Some(ref cb) = on_scroll {
                     cb(e.delta_x, e.delta_y);
                 }
@@ -266,6 +274,65 @@ mod tests {
             let node = ScrollView::new().child("hello").build(cx);
             let el = extract_element(&node);
             assert_eq!(el.children().len(), 1);
+        });
+    }
+
+    #[test]
+    fn scroll_zeros_irrelevant_axis_vertical() {
+        with_scope(|cx| {
+            let node = ScrollView::new().axis(ScrollAxis::Vertical).build(cx);
+            let el = extract_element(&node);
+
+            // Simulate a scroll event
+            let ctx = dusty_core::event::EventContext::new(vec![]);
+            let event = dusty_core::event::ScrollEvent {
+                delta_x: 10.0,
+                delta_y: 20.0,
+            };
+            for handler in el.event_handlers() {
+                if handler.name() == "scroll" {
+                    handler.invoke(&ctx, &event);
+                }
+            }
+
+            // Read the signal from custom data
+            let sig = el
+                .custom_data()
+                .downcast_ref::<Signal<(f64, f64)>>()
+                .unwrap();
+            let offset = sig.get().unwrap();
+            assert!(
+                (offset.0).abs() < f64::EPSILON,
+                "x should be zeroed for vertical"
+            );
+            assert!((offset.1 - 20.0).abs() < f64::EPSILON, "y should be 20.0");
+        });
+    }
+
+    #[test]
+    fn scroll_clamps_negative_offset() {
+        with_scope(|cx| {
+            let node = ScrollView::new().axis(ScrollAxis::Vertical).build(cx);
+            let el = extract_element(&node);
+
+            // Simulate a scroll with negative delta
+            let ctx = dusty_core::event::EventContext::new(vec![]);
+            let event = dusty_core::event::ScrollEvent {
+                delta_x: 0.0,
+                delta_y: -10.0,
+            };
+            for handler in el.event_handlers() {
+                if handler.name() == "scroll" {
+                    handler.invoke(&ctx, &event);
+                }
+            }
+
+            let sig = el
+                .custom_data()
+                .downcast_ref::<Signal<(f64, f64)>>()
+                .unwrap();
+            let offset = sig.get().unwrap();
+            assert!(offset.1 >= 0.0, "scroll offset should not go negative");
         });
     }
 

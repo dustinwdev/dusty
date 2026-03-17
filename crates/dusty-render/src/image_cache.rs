@@ -48,6 +48,8 @@ pub struct ImageCache {
     source_to_id: HashMap<ImageSource, ImageId>,
     next_id: u64,
     generation: u64,
+    total_bytes: usize,
+    max_bytes: usize,
 }
 
 impl ImageCache {
@@ -59,7 +61,28 @@ impl ImageCache {
             source_to_id: HashMap::new(),
             next_id: 0,
             generation: 0,
+            total_bytes: 0,
+            max_bytes: 64 * 1024 * 1024, // 64 MB default
         }
+    }
+
+    /// Creates a new image cache with the given memory budget in bytes.
+    #[must_use]
+    pub fn with_budget(max_bytes: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            source_to_id: HashMap::new(),
+            next_id: 0,
+            generation: 0,
+            total_bytes: 0,
+            max_bytes,
+        }
+    }
+
+    /// Returns the total memory usage of cached images in bytes.
+    #[must_use]
+    pub const fn memory_usage(&self) -> usize {
+        self.total_bytes
     }
 
     /// Loads an image from raw RGBA bytes, returning its [`ImageId`].
@@ -110,6 +133,8 @@ impl ImageCache {
             },
         );
         self.source_to_id.insert(source, id);
+        self.total_bytes += expected_len;
+        self.enforce_budget();
         Ok(id)
     }
 
@@ -162,6 +187,27 @@ impl ImageCache {
         self.generation += 1;
     }
 
+    /// Evicts least-recently-used images until memory usage is within budget.
+    pub fn enforce_budget(&mut self) {
+        while self.total_bytes > self.max_bytes && !self.entries.is_empty() {
+            // Find the LRU entry
+            let lru_id = self
+                .entries
+                .iter()
+                .min_by_key(|(_, e)| e.last_used)
+                .map(|(&id, _)| id);
+
+            if let Some(id) = lru_id {
+                if let Some(entry) = self.entries.remove(&id) {
+                    self.total_bytes = self.total_bytes.saturating_sub(entry.decoded.data.len());
+                }
+                self.source_to_id.retain(|_, v| *v != id);
+            } else {
+                break;
+            }
+        }
+    }
+
     /// Removes images not used for `threshold` or more frames.
     pub fn evict_unused(&mut self, threshold: u64) {
         let gen = self.generation;
@@ -173,10 +219,11 @@ impl ImageCache {
             .collect();
 
         for id in &to_remove {
-            self.entries.remove(id);
+            if let Some(entry) = self.entries.remove(id) {
+                self.total_bytes = self.total_bytes.saturating_sub(entry.decoded.data.len());
+            }
         }
 
-        // Clean up source→id mapping
         self.source_to_id.retain(|_, id| !to_remove.contains(id));
     }
 
@@ -312,5 +359,42 @@ mod tests {
         let source = ImageSource::Path(PathBuf::from("/tmp/test.png"));
         let source2 = source.clone();
         assert_eq!(source, source2);
+    }
+
+    #[test]
+    fn memory_budget_evicts_lru() {
+        // Budget for roughly 2 images of 4x4 RGBA (64 bytes each) = 128 bytes
+        let mut cache = ImageCache::with_budget(128);
+        let _id1 = cache
+            .load_rgba(ImageSource::Bytes { key: 1 }, make_rgba(2, 2), 2, 2)
+            .unwrap(); // 16 bytes
+        cache.advance_generation();
+        let _id2 = cache
+            .load_rgba(ImageSource::Bytes { key: 2 }, make_rgba(2, 2), 2, 2)
+            .unwrap(); // 16 bytes
+        cache.advance_generation();
+
+        // This should push us over budget and evict LRU
+        let _id3 = cache
+            .load_rgba(ImageSource::Bytes { key: 3 }, make_rgba(8, 8), 8, 8)
+            .unwrap(); // 256 bytes, over budget
+
+        assert!(cache.memory_usage() <= 128 + 256); // enforcement runs
+    }
+
+    #[test]
+    fn memory_tracking_accurate() {
+        let mut cache = ImageCache::new();
+        assert_eq!(cache.memory_usage(), 0);
+
+        cache
+            .load_rgba(ImageSource::Bytes { key: 1 }, make_rgba(2, 2), 2, 2)
+            .unwrap();
+        assert_eq!(cache.memory_usage(), 2 * 2 * 4);
+
+        cache
+            .load_rgba(ImageSource::Bytes { key: 2 }, make_rgba(4, 4), 4, 4)
+            .unwrap();
+        assert_eq!(cache.memory_usage(), 2 * 2 * 4 + 4 * 4 * 4);
     }
 }

@@ -113,7 +113,8 @@ impl<V: PartialEq + Clone + 'static> View for Radio<V> {
                 LabelContent::Static(s) => text(s),
                 LabelContent::Dynamic(f) => text_dynamic(f),
             };
-            builder = builder.child_text(label_child);
+            let label_str = label_child.current_text().into_owned();
+            builder = builder.attr("label", label_str).child_text(label_child);
         }
 
         if !self.disabled {
@@ -229,6 +230,19 @@ mod tests {
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
             assert_eq!(style.width, Some(20.0));
+        });
+    }
+
+    #[test]
+    fn label_sets_label_attr() {
+        with_scope(|cx| {
+            let group = create_signal(0i32).unwrap();
+            let node = Radio::new(1, group).label("Option A").build(cx);
+            let el = extract_element(&node);
+            assert_eq!(
+                el.attr("label"),
+                Some(&AttributeValue::String("Option A".into()))
+            );
         });
     }
 

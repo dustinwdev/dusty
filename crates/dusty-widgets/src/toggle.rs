@@ -143,7 +143,8 @@ impl View for Toggle {
                 LabelContent::Static(s) => text(s),
                 LabelContent::Dynamic(f) => text_dynamic(f),
             };
-            builder = builder.child_text(label_child);
+            let label_str = label_child.current_text().into_owned();
+            builder = builder.attr("label", label_str).child_text(label_child);
         }
 
         if !self.disabled {
@@ -274,6 +275,18 @@ mod tests {
             assert_eq!(style.width, Some(48.0));
             // Base border radius still present
             assert_eq!(style.border_radius, Corners::all(9999.0));
+        });
+    }
+
+    #[test]
+    fn label_sets_label_attr() {
+        with_scope(|cx| {
+            let node = Toggle::new().label("Dark mode").build(cx);
+            let el = extract_element(&node);
+            assert_eq!(
+                el.attr("label"),
+                Some(&AttributeValue::String("Dark mode".into()))
+            );
         });
     }
 

@@ -29,6 +29,9 @@ pub use dusty_render as render;
 pub use dusty_style as style;
 pub use dusty_widgets as widgets;
 
+pub use dusty_core as view_core;
+pub use dusty_text as text_engine;
+
 #[cfg(feature = "devtools")]
 pub use dusty_devtools as devtools;
 

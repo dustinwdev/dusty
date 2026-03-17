@@ -184,7 +184,7 @@ impl TextMeasure for TextSystem {
         let attrs = font_style_to_attrs(font);
 
         let Ok(mut font_system) = self.font_system.try_borrow_mut() else {
-            debug_assert!(false, "FontSystem already borrowed during measure");
+            eprintln!("dusty-text: BUG — FontSystem borrow conflict in measure");
             return (0.0, 0.0);
         };
         let mut buffer = Buffer::new(&mut font_system, metrics);
@@ -421,6 +421,17 @@ mod tests {
         let (w, h) = measure.measure("hello", None, &FontStyle::default());
         assert!(w > 0.0);
         assert!(h > 0.0);
+    }
+
+    #[test]
+    fn borrow_conflict_returns_zero_without_panic() {
+        let system = TextSystem::new();
+        // Hold a mutable borrow to simulate a conflict
+        let _guard = system.font_system_mut().unwrap();
+        // In release mode, this should return (0.0, 0.0) without panicking
+        let (w, h) = system.measure("hello", None, &FontStyle::default());
+        assert_eq!(w, 0.0);
+        assert_eq!(h, 0.0);
     }
 
     #[test]

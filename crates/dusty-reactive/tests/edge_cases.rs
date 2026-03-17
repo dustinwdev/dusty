@@ -70,15 +70,15 @@ fn memo_handles_disposed_dependency_gracefully() {
 
         assert_eq!(memo.get().unwrap(), 20);
 
-        // Dispose the signal out from under the memo
+        // Dispose the signal out from under the memo.
+        // Signal disposal no longer unregisters shared subscribers (WS1B fix),
+        // so the memo is not marked dirty and returns its cached value.
         dispose_signal(sig).unwrap();
 
-        // Memo should still be queryable — the computation will get an error
-        // from sig.get() which returns -1 via unwrap_or
-        // The memo itself may be dirty or may return the cached value
+        // Memo should still be queryable — returns the last cached value
+        // since disposal does not trigger recomputation.
         let result = memo.get();
-        // Either returns a value or an error — both are acceptable
-        assert!(result.is_ok() || result.is_err());
+        assert_eq!(result, Ok(20));
     });
 }
 
@@ -327,6 +327,6 @@ fn resource_state_tracked_exact_run_count() {
 
         // Change source — resource re-fetches, effect re-runs
         source.set(2).unwrap();
-        assert!(run_count.get() >= 2);
+        assert_eq!(run_count.get(), 2);
     });
 }

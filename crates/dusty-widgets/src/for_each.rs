@@ -91,11 +91,12 @@ where
         }
     }
 
-    /// Sets the key extraction function for reconciliation.
+    /// Sets the key extraction function for future reconciliation.
     ///
     /// The key function maps each item to a comparable key value. When the
-    /// list changes, keys are used to match old and new items for efficient
-    /// updates.
+    /// list changes, keys will be used to match old and new items for efficient
+    /// updates. **Note:** key-based reconciliation is not yet implemented;
+    /// currently the list is fully rebuilt on each change.
     #[must_use]
     pub fn key(mut self, f: impl Fn(&T) -> K + 'static) -> Self {
         self.key_fn = Some(Box::new(f));
@@ -129,14 +130,11 @@ where
             view_fn.as_ref().map_or_else(
                 || Node::Fragment(vec![]),
                 |vf| {
+                    // TODO: key_fn stored for future reconciliation — not yet used for diffing
+                    let _key_fn = &key_fn;
                     let nodes: Vec<Node> = items
                         .into_iter()
-                        .map(|item| {
-                            if let Some(kf) = &key_fn {
-                                let _ = kf(&item);
-                            }
-                            vf(item).into_view(cx)
-                        })
+                        .map(|item| vf(item).into_view(cx))
                         .collect();
                     Node::Fragment(nodes)
                 },
@@ -302,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn key_function_called() {
+    fn key_function_not_called_without_reconciliation() {
         with_scope(|cx| {
             let counter = Rc::new(Cell::new(0u32));
             let counter_clone = Rc::clone(&counter);
@@ -316,7 +314,8 @@ mod tests {
                 .build(cx);
 
             let _resolved = resolve_dynamic(&node);
-            assert_eq!(counter.get(), 3);
+            // Key function is stored but not called — reconciliation not yet implemented
+            assert_eq!(counter.get(), 0);
         });
     }
 

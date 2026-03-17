@@ -200,30 +200,20 @@ pub fn dispose_signal<T: 'static>(signal: Signal<T>) -> Result<()> {
 }
 
 fn dispose_signal_raw(id: SignalId) -> Result<()> {
-    // Collect subscriber IDs to clean up, then mark slot dead.
-    let subscriber_ids = with_runtime_mut(
-        |rt| -> std::result::Result<HashSet<SubscriberId>, ReactiveError> {
-            let slot = rt
-                .signals
-                .get_mut(id.index)
-                .ok_or(ReactiveError::SignalDisposed)?;
-            if !slot.alive || slot.generation != id.generation {
-                return Err(ReactiveError::SignalDisposed);
-            }
-            let subs = std::mem::take(&mut slot.subscribers);
-            slot.alive = false;
-            rt.free_list.push(id.index);
-            Ok(subs)
-        },
-    )??;
-
-    // Unregister each subscriber
-    for sub_id in subscriber_ids {
-        // Best effort — subscriber may already be gone
-        let _ = crate::subscriber::unregister_subscriber(sub_id);
-    }
-
-    Ok(())
+    with_runtime_mut(|rt| -> std::result::Result<(), ReactiveError> {
+        let slot = rt
+            .signals
+            .get_mut(id.index)
+            .ok_or(ReactiveError::SignalDisposed)?;
+        if !slot.alive || slot.generation != id.generation {
+            return Err(ReactiveError::SignalDisposed);
+        }
+        slot.subscribers.clear();
+        slot.alive = false;
+        slot.value = Box::new(());
+        rt.free_list.push(id.index);
+        Ok(())
+    })?
 }
 
 // ---------------------------------------------------------------------------
@@ -314,25 +304,48 @@ pub(crate) fn set_if_changed_and_notify<T: PartialEq + 'static>(
     id: SignalId,
     value: T,
 ) -> Result<bool> {
-    let changed = with_runtime(|rt| -> std::result::Result<bool, ReactiveError> {
-        let slot = rt
-            .signals
-            .get(id.index)
-            .ok_or(ReactiveError::SignalDisposed)?;
-        if !slot.alive || slot.generation != id.generation {
-            return Err(ReactiveError::SignalDisposed);
-        }
-        let current = slot
-            .value
-            .downcast_ref::<T>()
-            .ok_or(ReactiveError::TypeMismatch)?;
-        Ok(*current != value)
-    })??;
+    #[allow(clippy::type_complexity)]
+    let result = with_runtime_mut(
+        |rt| -> std::result::Result<Option<(SmallVec<[SubscriberId; 8]>, bool)>, ReactiveError> {
+            let slot = rt
+                .signals
+                .get_mut(id.index)
+                .ok_or(ReactiveError::SignalDisposed)?;
+            if !slot.alive || slot.generation != id.generation {
+                return Err(ReactiveError::SignalDisposed);
+            }
+            let current = slot
+                .value
+                .downcast_ref::<T>()
+                .ok_or(ReactiveError::TypeMismatch)?;
+            if *current == value {
+                return Ok(None);
+            }
+            let val_mut = slot
+                .value
+                .downcast_mut::<T>()
+                .ok_or(ReactiveError::TypeMismatch)?;
+            *val_mut = value;
+            slot.version += 1;
+            let subs: SmallVec<[SubscriberId; 8]> = slot.subscribers.iter().copied().collect();
+            let batching = rt.batch_depth > 0;
+            if batching {
+                rt.pending_batch_subscribers.extend(subs.iter().copied());
+            }
+            Ok(Some((subs, batching)))
+        },
+    )??;
 
-    if changed {
-        set_and_notify::<T>(id, move |v| *v = value)?;
+    match result {
+        None => Ok(false),
+        Some((subs, in_batch)) => {
+            if !in_batch {
+                crate::tracking::notify_subscribers(subs)?;
+                crate::effect::flush_pending_effects();
+            }
+            Ok(true)
+        }
     }
-    Ok(changed)
 }
 
 /// Collect-then-notify pattern: set or update the value while holding a
@@ -921,11 +934,36 @@ mod tests {
 
             dispose_signal(sig).unwrap();
 
-            // Subscriber should have been unregistered
+            // Subscriber should still exist — signal disposal must not destroy shared subscribers
             crate::runtime::with_runtime(|rt| {
-                assert!(rt.subscribers[sub_id.index].is_none());
+                assert!(rt.subscribers[sub_id.index].is_some());
             })
             .unwrap();
+        });
+    }
+
+    #[test]
+    fn dispose_signal_does_not_destroy_shared_subscriber() {
+        with_test_runtime(|| {
+            let sig_a = create_signal(0).unwrap();
+            let sig_b = create_signal(0).unwrap();
+            let count = Rc::new(Cell::new(0));
+
+            let cc = Rc::clone(&count);
+            let _effect = crate::effect::create_effect(move || {
+                let _va = sig_a.get().unwrap_or(0);
+                let _vb = sig_b.get().unwrap_or(0);
+                cc.set(cc.get() + 1);
+            })
+            .unwrap();
+
+            assert_eq!(count.get(), 1);
+
+            // Dispose sig_a — effect should still fire when sig_b changes
+            dispose_signal(sig_a).unwrap();
+
+            sig_b.set(42).unwrap();
+            assert_eq!(count.get(), 2);
         });
     }
 

@@ -148,6 +148,13 @@ impl TreeWalker {
             }
         }
 
+        // Fallback: compute accessible name from child text nodes
+        if label.is_none() && placeholder.is_none() {
+            if let Some(child_text) = collect_text_from_children(el.children()) {
+                ak_node.set_label(child_text);
+            }
+        }
+
         // Description
         if let Some(desc_val) = el
             .attr("description")
@@ -235,6 +242,39 @@ impl TreeWalker {
             ids.extend(self.walk_node(child, layout));
         }
         ids
+    }
+}
+
+/// Collects text content from child text nodes to compute an accessible name
+/// when no explicit label attribute is set.
+fn collect_text_from_children(children: &[Node]) -> Option<String> {
+    let mut parts = Vec::new();
+    for child in children {
+        match child {
+            Node::Text(text_node) => {
+                let t = text_node.current_text();
+                let s = t.trim();
+                if !s.is_empty() {
+                    parts.push(s.to_string());
+                }
+            }
+            Node::Component(comp) => {
+                if let Some(text) = collect_text_from_children(std::slice::from_ref(&comp.child)) {
+                    parts.push(text);
+                }
+            }
+            Node::Fragment(children) => {
+                if let Some(text) = collect_text_from_children(children) {
+                    parts.push(text);
+                }
+            }
+            _ => {}
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
     }
 }
 
@@ -927,6 +967,31 @@ mod tests {
                 .map(|(_, n)| n)
                 .unwrap();
             assert_eq!(row.live(), Some(accesskit::Live::Assertive));
+        });
+    }
+
+    #[test]
+    fn a11y_tree_computes_name_from_child_text() {
+        with_scope(|cx| {
+            let node = el("Button", cx)
+                .style(Style {
+                    width: Some(100.0),
+                    height: Some(40.0),
+                    ..Style::default()
+                })
+                .child(text("Submit"))
+                .build_node();
+            let layout = compute_layout(&node, 400.0, 300.0, &MockMeasure).unwrap();
+            let update = build_accessibility_tree(&node, &layout, None).unwrap();
+
+            let button = update
+                .nodes
+                .iter()
+                .find(|(id, _)| *id == NodeId(1))
+                .map(|(_, n)| n)
+                .unwrap();
+            // Label should be computed from child text
+            assert_eq!(button.label(), Some("Submit"));
         });
     }
 

@@ -58,7 +58,13 @@ impl Element {
         &self.attributes
     }
 
-    /// Returns a reference to the style data.
+    /// Returns a reference to the style data as a type-erased `dyn Any`.
+    ///
+    /// The style is stored as `Box<dyn Any>` to keep `dusty-core` independent
+    /// of `dusty-style`. Callers that know the concrete type (typically
+    /// `dusty_style::Style`) should use [`style_as`](Self::style_as) instead.
+    ///
+    /// If no style was set, the default value is `()`.
     #[must_use]
     pub fn style(&self) -> &dyn Any {
         &*self.style
@@ -198,8 +204,8 @@ impl From<f32> for AttributeValue {
 
 impl From<usize> for AttributeValue {
     fn from(v: usize) -> Self {
-        #[allow(clippy::cast_possible_wrap)]
-        Self::Int(v as i64)
+        debug_assert!(i64::try_from(v).is_ok(), "usize value {v} overflows i64");
+        Self::Int(i64::try_from(v).unwrap_or(i64::MAX))
     }
 }
 
@@ -594,6 +600,35 @@ mod tests {
 
         let zero: AttributeValue = 0usize.into();
         assert_eq!(zero, AttributeValue::Int(0));
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn attribute_value_from_usize_large_saturates() {
+        // On 64-bit platforms, usize::MAX > i64::MAX.
+        // In debug builds the debug_assert fires instead; this test
+        // verifies the release-mode saturating fallback.
+        #[cfg(target_pointer_width = "64")]
+        {
+            let v: AttributeValue = usize::MAX.into();
+            assert_eq!(v, AttributeValue::Int(i64::MAX));
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "usize value")]
+    fn attribute_value_from_usize_large_panics_in_debug() {
+        #[cfg(target_pointer_width = "64")]
+        {
+            let _: AttributeValue = usize::MAX.into();
+        }
+        // On 32-bit platforms, usize always fits in i64 so we force
+        // the panic path to keep the test meaningful.
+        #[cfg(not(target_pointer_width = "64"))]
+        {
+            panic!("usize value");
+        }
     }
 
     #[test]

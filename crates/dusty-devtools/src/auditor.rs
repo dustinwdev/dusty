@@ -154,7 +154,11 @@ impl AuditWalker {
         }
 
         let has_label = el.attr("label").is_some() || el.attr("aria-label").is_some();
-        if !has_label {
+        let has_child_text = el
+            .children()
+            .iter()
+            .any(|child| matches!(child, Node::Text(t) if !t.current_text().trim().is_empty()));
+        if !has_label && !has_child_text {
             self.add_issue(AuditIssue {
                 severity: Severity::Error,
                 rule: AuditRule::MissingLabel,
@@ -465,6 +469,23 @@ mod tests {
         let result = audit(&node);
         assert!(result.issues.is_empty());
         assert_eq!(result.total_nodes_audited, 1);
+    }
+
+    #[test]
+    fn auditor_passes_when_child_text_present() {
+        with_scope(|cx| {
+            let node = el("Button", cx).child(text("Submit")).build_node();
+            let result = audit(&node);
+            let label_issues: Vec<_> = result
+                .issues
+                .iter()
+                .filter(|i| i.rule == AuditRule::MissingLabel)
+                .collect();
+            assert!(
+                label_issues.is_empty(),
+                "Button with child text should not trigger MissingLabel"
+            );
+        });
     }
 
     #[test]

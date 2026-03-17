@@ -1,5 +1,7 @@
 //! Subscriber tracking for reactive dependency management.
 
+use std::rc::Rc;
+
 use crate::error::Result;
 use crate::runtime::{with_runtime, with_runtime_mut, SignalId};
 
@@ -23,11 +25,11 @@ pub fn register_subscriber(callback: impl Fn() + 'static) -> Result<SubscriberId
         if let Some(index) = rt.subscriber_free_list.pop() {
             let generation = rt.subscriber_generations[index] + 1;
             rt.subscriber_generations[index] = generation;
-            rt.subscribers[index] = Some(Box::new(callback));
+            rt.subscribers[index] = Some(Rc::new(callback));
             SubscriberId { index, generation }
         } else {
             let index = rt.subscribers.len();
-            rt.subscribers.push(Some(Box::new(callback)));
+            rt.subscribers.push(Some(Rc::new(callback)));
             rt.subscriber_generations.push(0);
             SubscriberId {
                 index,
@@ -55,18 +57,24 @@ pub fn unregister_subscriber(id: SubscriberId) -> Result<()> {
 
 /// Invoke a subscriber callback if it is still valid (correct generation).
 ///
-/// Uses an immutable borrow so it can be called during notification loops
-/// without conflicting with other immutable borrows.
+/// Clones the `Rc` callback and releases the runtime borrow before invoking,
+/// so the callback is free to mutate the runtime (e.g., write to signals).
 pub fn invoke_subscriber(id: SubscriberId) -> Result<()> {
-    with_runtime(|rt| {
+    let cb = with_runtime(|rt| {
         if id.index < rt.subscriber_generations.len()
             && rt.subscriber_generations[id.index] == id.generation
         {
-            if let Some(ref cb) = rt.subscribers[id.index] {
-                cb();
-            }
+            rt.subscribers[id.index].as_ref().map(Rc::clone)
+        } else {
+            None
         }
-    })
+    })?;
+
+    if let Some(callback) = cb {
+        callback();
+    }
+
+    Ok(())
 }
 
 /// Push a subscriber onto the tracking stack. While on the stack,
@@ -259,6 +267,23 @@ mod tests {
             // Invoking with new_id should work
             invoke_subscriber(new_id).unwrap();
             assert_eq!(new_counter.get(), 1);
+        });
+    }
+
+    #[test]
+    fn invoke_subscriber_allows_runtime_mutation_in_callback() {
+        with_test_runtime(|| {
+            let id = register_subscriber(|| {
+                // This requires a mutable borrow — would panic if invoke held an immutable borrow
+                let _ = crate::runtime::with_runtime_mut(|rt| {
+                    rt.batch_depth += 1;
+                    rt.batch_depth -= 1;
+                });
+            })
+            .unwrap();
+
+            // Should not panic
+            invoke_subscriber(id).unwrap();
         });
     }
 

@@ -138,10 +138,11 @@ pub fn create_effect(f: impl Fn() + 'static) -> Result<Effect> {
     *state_slot.borrow_mut() = Some(Rc::clone(&state));
 
     // Register disposer with current scope if any
-    let state_for_scope = Rc::clone(&state);
+    let state_for_scope = Rc::downgrade(&state);
     crate::scope::register_disposer(Box::new(move || {
-        // Best-effort: effect may already be disposed via explicit `dispose_effect` call
-        let _ = dispose_effect_inner(&state_for_scope);
+        if let Some(strong) = state_for_scope.upgrade() {
+            let _ = dispose_effect_inner(&strong);
+        }
     }))?;
 
     // Run immediately
@@ -187,6 +188,7 @@ pub(crate) fn clear_thread_locals() {
     PENDING_EFFECTS.with(|pe| {
         pe.borrow_mut().clear();
     });
+    crate::memo::clear_thread_locals();
 }
 
 /// Drain and execute all pending dirty effects.

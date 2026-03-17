@@ -5,7 +5,6 @@ use crate::gpu::GpuContext;
 use crate::pipeline::{GpuPrimitive, RenderPipeline, Uniforms};
 use crate::primitive::{DrawCommand, PrimitiveFlags};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use wgpu::util::DeviceExt;
 
 /// Top-level renderer that owns the GPU context and render pipeline.
 ///
@@ -13,6 +12,11 @@ use wgpu::util::DeviceExt;
 pub struct Renderer {
     ctx: GpuContext,
     pipeline: RenderPipeline,
+    uniform_buffer: wgpu::Buffer,
+    storage_buffer: wgpu::Buffer,
+    storage_capacity: usize,
+    bind_group: wgpu::BindGroup,
+    bind_group_valid: bool,
 }
 
 impl Renderer {
@@ -28,7 +32,46 @@ impl Renderer {
     ) -> Result<Self> {
         let ctx = GpuContext::new(window, width, height).await?;
         let pipeline = RenderPipeline::new(&ctx);
-        Ok(Self { ctx, pipeline })
+
+        let uniform_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dusty_uniform_buffer"),
+            size: std::mem::size_of::<Uniforms>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let initial_storage_capacity = 256;
+        let storage_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dusty_primitive_buffer"),
+            size: (initial_storage_capacity * std::mem::size_of::<GpuPrimitive>()) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("dusty_bind_group"),
+            layout: &pipeline.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: storage_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        Ok(Self {
+            ctx,
+            pipeline,
+            uniform_buffer,
+            storage_buffer,
+            storage_capacity: initial_storage_capacity,
+            bind_group,
+            bind_group_valid: true,
+        })
     }
 
     /// Renders a frame from the given draw commands.
@@ -94,7 +137,11 @@ impl Renderer {
         self.ctx.queue.submit(std::iter::once(encoder.finish()));
     }
 
-    fn render_primitives_pass(&self, view: &wgpu::TextureView, gpu_primitives: &[GpuPrimitive]) {
+    fn render_primitives_pass(
+        &mut self,
+        view: &wgpu::TextureView,
+        gpu_primitives: &[GpuPrimitive],
+    ) {
         let (width, height) = self.ctx.size();
 
         #[allow(clippy::cast_precision_loss)]
@@ -102,42 +149,48 @@ impl Renderer {
             viewport_size: [width as f32, height as f32],
             _padding: [0.0; 2],
         };
-        let uniform_buffer =
-            self.ctx
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("dusty_uniform_buffer"),
-                    contents: bytemuck::bytes_of(&uniforms),
-                    usage: wgpu::BufferUsages::UNIFORM,
-                });
+        self.ctx
+            .queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         let primitive_data: &[u8] = bytemuck::cast_slice(gpu_primitives);
-        let storage_buffer =
-            self.ctx
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("dusty_primitive_buffer"),
-                    contents: primitive_data,
-                    usage: wgpu::BufferUsages::STORAGE,
-                });
 
-        let bind_group = self
-            .ctx
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("dusty_bind_group"),
-                layout: &self.pipeline.bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: storage_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: uniform_buffer.as_entire_binding(),
-                    },
-                ],
+        if gpu_primitives.len() > self.storage_capacity {
+            // Geometric growth for storage buffer
+            self.storage_capacity = gpu_primitives.len().next_power_of_two();
+            self.storage_buffer = self.ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("dusty_primitive_buffer"),
+                size: (self.storage_capacity * std::mem::size_of::<GpuPrimitive>()) as u64,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
             });
+            self.bind_group_valid = false;
+        }
+
+        self.ctx
+            .queue
+            .write_buffer(&self.storage_buffer, 0, primitive_data);
+
+        if !self.bind_group_valid {
+            self.bind_group = self
+                .ctx
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("dusty_bind_group"),
+                    layout: &self.pipeline.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.storage_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: self.uniform_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+            self.bind_group_valid = true;
+        }
 
         let mut encoder = self
             .ctx
@@ -156,7 +209,7 @@ impl Renderer {
             });
 
             pass.set_pipeline(&self.pipeline.pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(0, &self.bind_group, &[]);
 
             #[allow(clippy::cast_possible_truncation)]
             let instance_count = gpu_primitives.len() as u32;

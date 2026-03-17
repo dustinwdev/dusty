@@ -17,6 +17,8 @@ pub enum ReactiveError {
     ResourceDisposed,
     /// The scope has been disposed and is no longer valid.
     ScopeDisposed,
+    /// A cyclic dependency was detected among memos.
+    CyclicDependency,
     /// A downcast failed due to a type mismatch.
     ///
     /// This should be unreachable through the safe public API — it indicates
@@ -35,6 +37,7 @@ impl fmt::Display for ReactiveError {
             Self::EffectDisposed => write!(f, "effect has been disposed"),
             Self::ResourceDisposed => write!(f, "resource has been disposed"),
             Self::ScopeDisposed => write!(f, "scope has been disposed"),
+            Self::CyclicDependency => write!(f, "cyclic dependency detected among memos"),
             Self::TypeMismatch => write!(f, "type mismatch on signal slot downcast"),
             Self::RuntimeBorrowError => {
                 write!(f, "runtime is already borrowed (re-entrancy conflict)")

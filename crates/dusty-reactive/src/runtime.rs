@@ -50,7 +50,7 @@ pub struct ScopeSlot {
 pub struct Runtime {
     pub signals: Vec<SignalSlot>,
     pub free_list: Vec<usize>,
-    pub subscribers: Vec<Option<Box<dyn Fn()>>>,
+    pub subscribers: Vec<Option<Rc<dyn Fn()>>>,
     pub subscriber_generations: Vec<u64>,
     pub subscriber_free_list: Vec<usize>,
     pub tracking_stack: Vec<SubscriberId>,

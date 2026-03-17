@@ -64,6 +64,7 @@ struct AppHandler<F> {
     cursor_x: f64,
     cursor_y: f64,
     modifiers: Modifiers,
+    error: Option<PlatformError>,
 }
 
 impl<F> AppHandler<F> {
@@ -75,6 +76,7 @@ impl<F> AppHandler<F> {
             cursor_x: 0.0,
             cursor_y: 0.0,
             modifiers: Modifiers::default(),
+            error: None,
         }
     }
 
@@ -117,7 +119,7 @@ where
                 });
             }
             Err(err) => {
-                eprintln!("Failed to create window: {err}");
+                self.error = Some(PlatformError::WindowCreation(err.to_string()));
                 event_loop.exit();
             }
         }
@@ -187,6 +189,9 @@ pub fn run(
     event_loop
         .run_app(&mut app)
         .map_err(|e| PlatformError::EventLoopExit(format!("{e}")))?;
+    if let Some(err) = app.error {
+        return Err(err);
+    }
     Ok(())
 }
 
@@ -202,6 +207,13 @@ mod tests {
         assert!((handler.cursor_x).abs() < f64::EPSILON);
         assert!((handler.cursor_y).abs() < f64::EPSILON);
         assert_eq!(handler.modifiers, Modifiers::default());
+    }
+
+    #[test]
+    fn app_handler_initial_error_is_none() {
+        let config = WindowConfig::new("Test");
+        let handler = AppHandler::new(config, |_window: &PlatformWindow, _event: &AppEvent| false);
+        assert!(handler.error.is_none());
     }
 
     #[test]

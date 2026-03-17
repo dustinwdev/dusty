@@ -29,6 +29,7 @@ pub struct GlyphCache {
     generation: u64,
     staging_buffer: Vec<u8>,
     dirty: bool,
+    max_entries: usize,
 }
 
 impl GlyphCache {
@@ -42,6 +43,24 @@ impl GlyphCache {
             generation: 0,
             staging_buffer,
             dirty: false,
+            max_entries: 4096,
+        }
+    }
+
+    /// Creates a new glyph cache with the given atlas dimensions and max entry count.
+    ///
+    /// When the cache exceeds `max_entries`, an eviction pass is triggered
+    /// automatically on the next insert.
+    #[must_use]
+    pub fn with_capacity(width: u32, height: u32, max_entries: usize) -> Self {
+        let staging_buffer = vec![0u8; (width * height) as usize];
+        Self {
+            atlas: ShelfAllocator::new(width, height),
+            cache: HashMap::new(),
+            generation: 0,
+            staging_buffer,
+            dirty: false,
+            max_entries,
         }
     }
 
@@ -63,6 +82,12 @@ impl GlyphCache {
 
         // Cache miss — rasterize
         let glyph = rasterizer.rasterize(font_system, key)?;
+
+        // Evict if over capacity
+        if self.cache.len() >= self.max_entries {
+            // Evict glyphs unused for 30+ frames
+            self.evict_unused(30);
+        }
 
         self.insert_glyph(key, &glyph)
     }
@@ -335,5 +360,35 @@ mod tests {
         assert_eq!(cache.len(), 0);
         assert_eq!(cache.generation(), 0);
         assert_eq!(cache.atlas_size(), (128, 128));
+    }
+
+    #[test]
+    fn max_entries_triggers_eviction() {
+        let system = TextSystem::new();
+        let mut font_system = system.font_system_mut().unwrap();
+        let mut rasterizer = GlyphRasterizer::new();
+        let mut cache = GlyphCache::with_capacity(512, 512, 3);
+
+        // Insert 3 glyphs at generation 0
+        for ch in ['A', 'B', 'C'] {
+            if let Some(key) = get_cache_key(&mut font_system, ch) {
+                let _ = cache.get_or_rasterize(key, &mut rasterizer, &mut font_system);
+            }
+        }
+        assert!(cache.len() <= 3);
+
+        // Advance generation so existing entries are "old"
+        for _ in 0..40 {
+            cache.advance_generation();
+        }
+
+        // Insert a 4th glyph — should trigger eviction of old entries
+        if let Some(key) = get_cache_key(&mut font_system, 'D') {
+            let _ = cache.get_or_rasterize(key, &mut rasterizer, &mut font_system);
+        }
+
+        // Cache should have been cleaned up (eviction clears all after retain)
+        // The 4th glyph was inserted after eviction cleared the cache
+        assert!(cache.len() <= 3);
     }
 }

@@ -65,7 +65,10 @@ impl GpuContext {
             .iter()
             .find(|f| f.is_srgb())
             .copied()
-            .unwrap_or(surface_caps.formats[0]);
+            .or_else(|| surface_caps.formats.first().copied())
+            .ok_or_else(|| {
+                RenderError::SurfaceConfig("no supported surface formats".to_string())
+            })?;
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -73,7 +76,9 @@ impl GpuContext {
             width: width.max(1),
             height: height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: surface_caps.alpha_modes[0],
+            alpha_mode: surface_caps.alpha_modes.first().copied().ok_or_else(|| {
+                RenderError::SurfaceConfig("no supported alpha modes".to_string())
+            })?,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };

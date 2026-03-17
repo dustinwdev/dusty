@@ -100,6 +100,26 @@ fn root_level_exports_compile() {
 }
 
 #[test]
+fn view_core_alias_accessible() {
+    // Verify the alias resolves to dusty_core types
+    let _node = dusty::view_core::node::text("hello");
+    let _key = dusty::view_core::event::Key("Enter".into());
+}
+
+#[test]
+fn text_engine_alias_accessible() {
+    // Verify the alias resolves to dusty_text types
+    let _system = dusty::text_engine::TextSystem::new();
+}
+
+#[test]
+fn existing_aliases_still_work() {
+    // Smoke test that existing aliases didn't break
+    let _ = dusty::reactive::initialize_runtime;
+    let _ = dusty::style::Style::default();
+}
+
+#[test]
 fn macro_reexports_compile() {
     use dusty::prelude::*;
 
