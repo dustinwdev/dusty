@@ -7,7 +7,10 @@ pub mod node;
 pub mod view;
 pub mod view_seq;
 
-pub use element::{el, AttributeValue, Element, ElementBuilder, EventHandler};
+pub use element::{
+    el, AttributeValue, Element, ElementBuilder, EventHandler, EventOnly, IntoEventHandler,
+    WithContext,
+};
 pub use error::{CoreError, Result};
 pub use event::{
     BlurEvent, ClickEvent, DragEvent, DragPhase, Event, EventContext, FocusEvent, HoverEvent, Key,

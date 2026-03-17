@@ -87,7 +87,7 @@ impl Element {
     ///     let elem = el("Box", cx).style(42u32).build();
     ///     assert_eq!(elem.style_as::<u32>(), Some(&42));
     ///     assert_eq!(elem.style_as::<String>(), None);
-    /// }).unwrap();
+    /// });
     /// dispose_runtime();
     /// ```
     #[must_use]
@@ -218,6 +218,45 @@ impl From<bool> for AttributeValue {
 /// Type alias for event handler callback functions.
 type EventCallback = Box<dyn Fn(&EventContext, &dyn Any)>;
 
+// ---------------------------------------------------------------------------
+// IntoEventHandler — accept both |e| and |ctx, e| closures
+// ---------------------------------------------------------------------------
+
+/// Marker type for event-only closures (`Fn(&E)`).
+pub struct EventOnly;
+
+/// Marker type for closures with context (`Fn(&EventContext, &E)`).
+pub struct WithContext;
+
+/// Boxed typed event handler — used as the return type of
+/// [`IntoEventHandler::into_handler`].
+type BoxedEventHandler<E> = Box<dyn Fn(&EventContext, &E)>;
+
+/// Trait for converting closures into event handlers.
+///
+/// Two implementations exist:
+/// - `Fn(&E)` — event-only, ignoring context (common case)
+/// - `Fn(&EventContext, &E)` — when propagation control is needed
+///
+/// The marker type `M` is inferred by the compiler; users never write it.
+pub trait IntoEventHandler<E: Event, M> {
+    /// Converts this closure into a boxed event handler that takes both
+    /// context and event.
+    fn into_handler(self) -> BoxedEventHandler<E>;
+}
+
+impl<E: Event, F: Fn(&E) + 'static> IntoEventHandler<E, EventOnly> for F {
+    fn into_handler(self) -> BoxedEventHandler<E> {
+        Box::new(move |_ctx, event| self(event))
+    }
+}
+
+impl<E: Event, F: Fn(&EventContext, &E) + 'static> IntoEventHandler<E, WithContext> for F {
+    fn into_handler(self) -> BoxedEventHandler<E> {
+        Box::new(self)
+    }
+}
+
 /// An event handler attached to an element.
 pub struct EventHandler {
     name: &'static str,
@@ -263,7 +302,7 @@ impl fmt::Debug for EventHandler {
 ///         .attr("gap", 8i64)
 ///         .build_node();
 ///     assert!(node.is_element());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 #[must_use]
@@ -325,17 +364,18 @@ impl ElementBuilder {
         self
     }
 
-    /// Registers a typed event handler. The handler receives the concrete event type.
-    fn on_event<E: Event>(mut self, handler: impl Fn(&EventContext, &E) + 'static) -> Self {
+    /// Registers a typed event handler. Accepts either `|e| { ... }` or
+    /// `|ctx, e| { ... }` closures via [`IntoEventHandler`].
+    fn on_event<E: Event, M>(mut self, handler: impl IntoEventHandler<E, M>) -> Self {
+        let handler = handler.into_handler();
         self.element.event_handlers.push(EventHandler {
             name: E::event_name(),
             callback: Box::new(move |ctx, any| {
                 if let Some(event) = any.downcast_ref::<E>() {
                     handler(ctx, event);
                 } else {
-                    debug_assert!(
-                        false,
-                        "event type mismatch: handler for '{}' received wrong type",
+                    eprintln!(
+                        "dusty: event type mismatch: handler for '{}' received wrong type",
                         E::event_name()
                     );
                 }
@@ -345,47 +385,49 @@ impl ElementBuilder {
     }
 
     /// Registers a click event handler.
-    pub fn on_click(self, handler: impl Fn(&EventContext, &ClickEvent) + 'static) -> Self {
+    ///
+    /// Accepts either `|e| { ... }` or `|ctx, e| { ... }`.
+    pub fn on_click<M>(self, handler: impl IntoEventHandler<ClickEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a hover event handler.
-    pub fn on_hover(self, handler: impl Fn(&EventContext, &HoverEvent) + 'static) -> Self {
+    pub fn on_hover<M>(self, handler: impl IntoEventHandler<HoverEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a key-down event handler.
-    pub fn on_key_down(self, handler: impl Fn(&EventContext, &KeyDownEvent) + 'static) -> Self {
+    pub fn on_key_down<M>(self, handler: impl IntoEventHandler<KeyDownEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a key-up event handler.
-    pub fn on_key_up(self, handler: impl Fn(&EventContext, &KeyUpEvent) + 'static) -> Self {
+    pub fn on_key_up<M>(self, handler: impl IntoEventHandler<KeyUpEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a focus event handler.
-    pub fn on_focus(self, handler: impl Fn(&EventContext, &FocusEvent) + 'static) -> Self {
+    pub fn on_focus<M>(self, handler: impl IntoEventHandler<FocusEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a blur event handler.
-    pub fn on_blur(self, handler: impl Fn(&EventContext, &BlurEvent) + 'static) -> Self {
+    pub fn on_blur<M>(self, handler: impl IntoEventHandler<BlurEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a scroll event handler.
-    pub fn on_scroll(self, handler: impl Fn(&EventContext, &ScrollEvent) + 'static) -> Self {
+    pub fn on_scroll<M>(self, handler: impl IntoEventHandler<ScrollEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a text input event handler.
-    pub fn on_text_input(self, handler: impl Fn(&EventContext, &TextInputEvent) + 'static) -> Self {
+    pub fn on_text_input<M>(self, handler: impl IntoEventHandler<TextInputEvent, M>) -> Self {
         self.on_event(handler)
     }
 
     /// Registers a drag event handler.
-    pub fn on_drag(self, handler: impl Fn(&EventContext, &DragEvent) + 'static) -> Self {
+    pub fn on_drag<M>(self, handler: impl IntoEventHandler<DragEvent, M>) -> Self {
         self.on_event(handler)
     }
 
@@ -426,7 +468,7 @@ impl ElementBuilder {
 /// create_scope(|cx| {
 ///     let node = el("Button", cx).attr("label", "OK").build_node();
 ///     assert!(node.is_element());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub fn el(name: &'static str, cx: Scope) -> ElementBuilder {
@@ -454,7 +496,7 @@ mod tests {
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
         let _guard = RuntimeGuard;
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
     }
 
     #[test]
@@ -634,7 +676,7 @@ mod tests {
     #[test]
     fn on_click_registers_handler_with_click_name() {
         with_scope(|cx| {
-            let elem = el("Button", cx).on_click(|_ctx, _e| {}).build();
+            let elem = el("Button", cx).on_click(|_e: &ClickEvent| {}).build();
             assert_eq!(elem.event_handlers().len(), 1);
             assert_eq!(elem.event_handlers()[0].name(), "click");
         });
@@ -646,7 +688,7 @@ mod tests {
             let received = std::rc::Rc::new(std::cell::Cell::new((0.0f64, 0.0f64)));
             let received_clone = received.clone();
             let elem = el("Button", cx)
-                .on_click(move |_ctx, e| {
+                .on_click(move |e: &ClickEvent| {
                     received_clone.set((e.x, e.y));
                 })
                 .build();
@@ -665,7 +707,7 @@ mod tests {
             let called = std::rc::Rc::new(std::cell::Cell::new(false));
             let called_clone = called.clone();
             let elem = el("Button", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     called_clone.set(true);
                 })
                 .build();
@@ -684,8 +726,8 @@ mod tests {
             let c1 = count.clone();
             let c2 = count.clone();
             let elem = el("Button", cx)
-                .on_click(move |_ctx, _e| c1.set(c1.get() + 1))
-                .on_click(move |_ctx, _e| c2.set(c2.get() + 1))
+                .on_click(move |_e: &ClickEvent| c1.set(c1.get() + 1))
+                .on_click(move |_e: &ClickEvent| c2.set(c2.get() + 1))
                 .build();
 
             let ctx = EventContext::new(vec![]);
@@ -701,7 +743,7 @@ mod tests {
     fn handler_receives_context_and_can_stop_propagation() {
         with_scope(|cx| {
             let elem = el("Button", cx)
-                .on_click(|ctx, _e| {
+                .on_click(|ctx: &EventContext, _e: &ClickEvent| {
                     ctx.stop_propagation();
                 })
                 .build();
@@ -717,15 +759,15 @@ mod tests {
     fn typed_builder_methods_chain() {
         with_scope(|cx| {
             let elem = el("Widget", cx)
-                .on_click(|_ctx, _e| {})
-                .on_hover(|_ctx, _e| {})
-                .on_key_down(|_ctx, _e| {})
-                .on_key_up(|_ctx, _e| {})
-                .on_focus(|_ctx, _e| {})
-                .on_blur(|_ctx, _e| {})
-                .on_scroll(|_ctx, _e| {})
-                .on_text_input(|_ctx, _e| {})
-                .on_drag(|_ctx, _e| {})
+                .on_click(|_e: &ClickEvent| {})
+                .on_hover(|_e: &HoverEvent| {})
+                .on_key_down(|_e: &KeyDownEvent| {})
+                .on_key_up(|_e: &KeyUpEvent| {})
+                .on_focus(|_e: &FocusEvent| {})
+                .on_blur(|_e: &BlurEvent| {})
+                .on_scroll(|_e: &ScrollEvent| {})
+                .on_text_input(|_e: &TextInputEvent| {})
+                .on_drag(|_e: &DragEvent| {})
                 .build();
             assert_eq!(elem.event_handlers().len(), 9);
         });
@@ -760,13 +802,12 @@ mod tests {
         );
     }
 
-    #[cfg(debug_assertions)]
     #[test]
-    #[should_panic(expected = "event type mismatch")]
-    fn typed_handler_panics_on_wrong_event_type_in_debug() {
+    fn typed_handler_logs_on_wrong_event_type() {
         with_scope(|cx| {
-            let elem = el("Button", cx).on_click(|_ctx, _e| {}).build();
+            let elem = el("Button", cx).on_click(|_e: &ClickEvent| {}).build();
             let ctx = EventContext::new(vec![]);
+            // Should not panic — logs via eprintln and silently ignores
             elem.event_handlers()[0].invoke(&ctx, &42u32);
         });
     }
@@ -774,7 +815,7 @@ mod tests {
     #[test]
     fn on_drag_registers_handler() {
         with_scope(|cx| {
-            let elem = el("Canvas", cx).on_drag(|_ctx, _e| {}).build();
+            let elem = el("Canvas", cx).on_drag(|_e: &DragEvent| {}).build();
             assert_eq!(elem.event_handlers().len(), 1);
             assert_eq!(elem.event_handlers()[0].name(), "drag");
         });
