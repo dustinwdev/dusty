@@ -357,12 +357,12 @@ impl EventContext {
 /// initialize_runtime();
 /// create_scope(|cx| {
 ///     let tree = el("Root", cx)
-///         .on_click(|_ctx, _e| {})
+///         .on_click(|_e: &ClickEvent| {})
 ///         .child(el("Child", cx))
 ///         .build_node();
 ///     let handled = dispatch_event(&tree, &[0], &ClickEvent { x: 10.0, y: 20.0 }).unwrap();
 ///     assert!(handled);
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub fn dispatch_event<E: Event>(
@@ -719,7 +719,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -729,7 +729,7 @@ mod tests {
             let called = std::rc::Rc::new(std::cell::Cell::new(false));
             let called_clone = called.clone();
             let tree = el("Root", cx)
-                .child(el("Child", cx).on_click(move |_ctx, _e| {
+                .child(el("Child", cx).on_click(move |_e: &ClickEvent| {
                     called_clone.set(true);
                 }))
                 .build_node();
@@ -748,10 +748,10 @@ mod tests {
             let order2 = order.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     order1.borrow_mut().push("root");
                 })
-                .child(el("Child", cx).on_click(move |_ctx, _e| {
+                .child(el("Child", cx).on_click(move |_e: &ClickEvent| {
                     order2.borrow_mut().push("child");
                 }))
                 .build_node();
@@ -768,12 +768,14 @@ mod tests {
             let root_clone = root_called.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     root_clone.set(true);
                 })
-                .child(el("Child", cx).on_click(|ctx, _e| {
-                    ctx.stop_propagation();
-                }))
+                .child(
+                    el("Child", cx).on_click(|ctx: &EventContext, _e: &ClickEvent| {
+                        ctx.stop_propagation();
+                    }),
+                )
                 .build_node();
 
             dispatch_event(&tree, &[0], &ClickEvent { x: 0.0, y: 0.0 }).unwrap();
@@ -807,7 +809,7 @@ mod tests {
             let called = std::rc::Rc::new(std::cell::Cell::new(false));
             let called_clone = called.clone();
             let tree = el("Root", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     called_clone.set(true);
                 })
                 .build_node();
@@ -823,7 +825,7 @@ mod tests {
         with_scope(|cx| {
             // A fragment wrapping an element — dispatching through it shouldn't error
             let tree = el("Root", cx)
-                .child(el("Child", cx).on_click(|_ctx, _e| {}))
+                .child(el("Child", cx).on_click(|_e: &ClickEvent| {}))
                 .build_node();
 
             // Path [0] targets the child element — works fine
@@ -840,10 +842,10 @@ mod tests {
             let c2 = count.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     c1.set(c1.get() + 1);
                 })
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     c2.set(c2.get() + 1);
                 })
                 .build_node();
@@ -862,16 +864,16 @@ mod tests {
             let o3 = order.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     o1.borrow_mut().push("root");
                 })
                 .child(
                     el("Mid", cx)
-                        .on_click(move |ctx, _e| {
+                        .on_click(move |ctx: &EventContext, _e: &ClickEvent| {
                             o2.borrow_mut().push("mid");
                             ctx.stop_propagation();
                         })
-                        .child(el("Leaf", cx).on_click(move |_ctx, _e| {
+                        .child(el("Leaf", cx).on_click(move |_e: &ClickEvent| {
                             o3.borrow_mut().push("leaf");
                         })),
                 )
@@ -948,11 +950,11 @@ mod tests {
             let c2 = count.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |ctx, _e| {
+                .on_click(move |ctx: &EventContext, _e: &ClickEvent| {
                     c1.set(c1.get() + 1);
                     ctx.stop_immediate_propagation();
                 })
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     c2.set(c2.get() + 1);
                 })
                 .build_node();
@@ -970,12 +972,14 @@ mod tests {
             let root_clone = root_called.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     root_clone.set(true);
                 })
-                .child(el("Child", cx).on_click(|ctx, _e| {
-                    ctx.stop_immediate_propagation();
-                }))
+                .child(
+                    el("Child", cx).on_click(|ctx: &EventContext, _e: &ClickEvent| {
+                        ctx.stop_immediate_propagation();
+                    }),
+                )
                 .build_node();
 
             dispatch_event(&tree, &[0], &ClickEvent { x: 0.0, y: 0.0 }).unwrap();
@@ -991,11 +995,11 @@ mod tests {
             let c2 = count.clone();
 
             let tree = el("Root", cx)
-                .on_click(move |ctx, _e| {
+                .on_click(move |ctx: &EventContext, _e: &ClickEvent| {
                     c1.set(c1.get() + 1);
                     ctx.stop_propagation();
                 })
-                .on_click(move |_ctx, _e| {
+                .on_click(move |_e: &ClickEvent| {
                     c2.set(c2.get() + 1);
                 })
                 .build_node();

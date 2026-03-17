@@ -1,14 +1,14 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use dusty_core::event::{dispatch_event, ClickEvent, HoverEvent, KeyDownEvent};
+use dusty_core::event::{dispatch_event, ClickEvent, EventContext, HoverEvent, KeyDownEvent};
 use dusty_core::node::ComponentNode;
 use dusty_core::{el, text, Key, Modifiers, Node};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime, Scope};
 
 fn with_scope(f: impl FnOnce(Scope)) {
     initialize_runtime();
-    create_scope(|cx| f(cx)).unwrap();
+    create_scope(|cx| f(cx));
     dispose_runtime();
 }
 
@@ -20,7 +20,7 @@ fn click_dispatch_end_to_end() {
 
         let tree = el("App", cx)
             .child(
-                el("Panel", cx).child(el("Button", cx).on_click(move |_ctx, e| {
+                el("Panel", cx).child(el("Button", cx).on_click(move |e: &ClickEvent| {
                     coords_clone.set((e.x, e.y));
                 })),
             )
@@ -41,11 +41,11 @@ fn bubbling_order_three_levels() {
         let o3 = order.clone();
 
         let tree = el("App", cx)
-            .on_click(move |_ctx, _e| o1.borrow_mut().push("app"))
+            .on_click(move |_e: &ClickEvent| o1.borrow_mut().push("app"))
             .child(
                 el("Panel", cx)
-                    .on_click(move |_ctx, _e| o2.borrow_mut().push("panel"))
-                    .child(el("Button", cx).on_click(move |_ctx, _e| {
+                    .on_click(move |_e: &ClickEvent| o2.borrow_mut().push("panel"))
+                    .child(el("Button", cx).on_click(move |_e: &ClickEvent| {
                         o3.borrow_mut().push("button");
                     })),
             )
@@ -65,14 +65,14 @@ fn stop_propagation_at_middle_level() {
         let o3 = order.clone();
 
         let tree = el("App", cx)
-            .on_click(move |_ctx, _e| o1.borrow_mut().push("app"))
+            .on_click(move |_e: &ClickEvent| o1.borrow_mut().push("app"))
             .child(
                 el("Panel", cx)
-                    .on_click(move |ctx, _e| {
+                    .on_click(move |ctx: &EventContext, _e: &ClickEvent| {
                         o2.borrow_mut().push("panel");
                         ctx.stop_propagation();
                     })
-                    .child(el("Button", cx).on_click(move |_ctx, _e| {
+                    .child(el("Button", cx).on_click(move |_e: &ClickEvent| {
                         o3.borrow_mut().push("button");
                     })),
             )
@@ -92,8 +92,8 @@ fn different_event_types_dont_cross() {
         let hc = hover_count.clone();
 
         let tree = el("Button", cx)
-            .on_click(move |_ctx, _e| cc.set(cc.get() + 1))
-            .on_hover(move |_ctx, _e| hc.set(hc.get() + 1))
+            .on_click(move |_e: &ClickEvent| cc.set(cc.get() + 1))
+            .on_hover(move |_e: &HoverEvent| hc.set(hc.get() + 1))
             .build_node();
 
         dispatch_event(&tree, &[], &ClickEvent { x: 0.0, y: 0.0 }).unwrap();
@@ -113,7 +113,7 @@ fn keyboard_event_dispatch() {
         let rk = received_key.clone();
 
         let tree = el("Input", cx)
-            .on_key_down(move |_ctx, e| {
+            .on_key_down(move |e: &KeyDownEvent| {
                 *rk.borrow_mut() = e.key.0.clone();
             })
             .build_node();
@@ -137,7 +137,7 @@ fn dispatch_through_text_node_sibling() {
         // Dispatch to child index 1 (the Button)
         let tree = el("App", cx)
             .child(text("label"))
-            .child(el("Button", cx).on_click(move |_ctx, _e| {
+            .child(el("Button", cx).on_click(move |_e: &ClickEvent| {
                 called_clone.set(true);
             }))
             .build_node();
@@ -166,9 +166,11 @@ fn event_context_path_is_correct_in_handler() {
         let path_clone = path.clone();
 
         let tree = el("Root", cx)
-            .child(el("Child", cx).on_click(move |ctx, _e| {
-                *path_clone.borrow_mut() = ctx.target_path().to_vec();
-            }))
+            .child(
+                el("Child", cx).on_click(move |ctx: &EventContext, _e: &ClickEvent| {
+                    *path_clone.borrow_mut() = ctx.target_path().to_vec();
+                }),
+            )
             .build_node();
 
         dispatch_event(&tree, &[0], &ClickEvent { x: 0.0, y: 0.0 }).unwrap();
@@ -195,7 +197,7 @@ fn fragment_child_dispatch() {
 
         // Root element with a fragment child containing a button
         let frag = Node::Fragment(vec![el("Button", cx)
-            .on_click(move |_ctx, _e| called_clone.set(true))
+            .on_click(move |_e: &ClickEvent| called_clone.set(true))
             .build_node()]);
         let tree = el("Root", cx).child_node(frag).build_node();
 
@@ -216,7 +218,7 @@ fn component_node_dispatch_traverses_child() {
 
         // Root element wrapping a ComponentNode whose single child is a Button
         let button = el("Button", cx)
-            .on_click(move |_ctx, _e| called_clone.set(true))
+            .on_click(move |_e: &ClickEvent| called_clone.set(true))
             .build_node();
         let comp = Node::Component(ComponentNode {
             name: "MyComponent",
@@ -239,14 +241,14 @@ fn component_node_bubbles_through_parent() {
         let o2 = order.clone();
 
         let button = el("Button", cx)
-            .on_click(move |_ctx, _e| o2.borrow_mut().push("button"))
+            .on_click(move |_e: &ClickEvent| o2.borrow_mut().push("button"))
             .build_node();
         let comp = Node::Component(ComponentNode {
             name: "Wrapper",
             child: Box::new(button),
         });
         let tree = el("Root", cx)
-            .on_click(move |_ctx, _e| o1.borrow_mut().push("root"))
+            .on_click(move |_e: &ClickEvent| o1.borrow_mut().push("root"))
             .child_node(comp)
             .build_node();
 
@@ -266,14 +268,14 @@ fn stop_immediate_propagation_integration() {
         let rc = root_called.clone();
 
         let tree = el("Root", cx)
-            .on_click(move |_ctx, _e| rc.set(true))
+            .on_click(move |_e: &ClickEvent| rc.set(true))
             .child(
                 el("Button", cx)
-                    .on_click(move |ctx, _e| {
+                    .on_click(move |ctx: &EventContext, _e: &ClickEvent| {
                         c1.set(c1.get() + 1);
                         ctx.stop_immediate_propagation();
                     })
-                    .on_click(move |_ctx, _e| {
+                    .on_click(move |_e: &ClickEvent| {
                         c2.set(c2.get() + 1);
                     }),
             )
