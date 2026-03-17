@@ -95,21 +95,21 @@ impl Theme {
 
 /// Provide a [`Theme`] to the current reactive scope and its descendants.
 ///
-/// # Errors
+/// # Panics
 ///
-/// Returns an error if no reactive scope is active.
-pub fn provide_theme(theme: Theme) -> dusty_reactive::error::Result<()> {
-    dusty_reactive::provide_context(theme)
+/// Panics if no reactive scope is active.
+pub fn provide_theme(theme: Theme) {
+    dusty_reactive::provide_context(theme);
 }
 
 /// Retrieve the current [`Theme`] from the scope tree. Falls back to
 /// [`Theme::light()`] when no provider exists.
 ///
-/// # Errors
+/// # Panics
 ///
-/// Returns an error if the reactive runtime is not initialized.
-pub fn use_theme() -> dusty_reactive::error::Result<Theme> {
-    Ok(dusty_reactive::use_context::<Theme>()?.unwrap_or_else(Theme::light))
+/// Panics if the reactive runtime is not initialized.
+pub fn use_theme() -> Theme {
+    dusty_reactive::use_context::<Theme>().unwrap_or_else(Theme::light)
 }
 
 #[cfg(test)]
@@ -146,11 +146,10 @@ mod tests {
     fn provide_and_use_theme_roundtrip() {
         dusty_reactive::initialize_runtime();
         let _scope = dusty_reactive::create_scope(|_s| {
-            provide_theme(Theme::dark()).unwrap();
-            let t = use_theme().unwrap();
+            provide_theme(Theme::dark());
+            let t = use_theme();
             assert_eq!(t, Theme::dark());
-        })
-        .unwrap();
+        });
         dusty_reactive::dispose_runtime();
     }
 
@@ -158,14 +157,12 @@ mod tests {
     fn nested_scope_inherits_theme() {
         dusty_reactive::initialize_runtime();
         let _scope = dusty_reactive::create_scope(|p| {
-            provide_theme(Theme::dark()).unwrap();
+            provide_theme(Theme::dark());
             let _child = dusty_reactive::create_child_scope(p, |_c| {
-                let t = use_theme().unwrap();
+                let t = use_theme();
                 assert_eq!(t, Theme::dark());
-            })
-            .unwrap();
-        })
-        .unwrap();
+            });
+        });
         dusty_reactive::dispose_runtime();
     }
 
@@ -173,18 +170,16 @@ mod tests {
     fn child_overrides_theme() {
         dusty_reactive::initialize_runtime();
         let _scope = dusty_reactive::create_scope(|p| {
-            provide_theme(Theme::dark()).unwrap();
+            provide_theme(Theme::dark());
             let _child = dusty_reactive::create_child_scope(p, |_c| {
-                provide_theme(Theme::light()).unwrap();
-                let t = use_theme().unwrap();
+                provide_theme(Theme::light());
+                let t = use_theme();
                 assert_eq!(t, Theme::light());
-            })
-            .unwrap();
+            });
             // Parent still has dark
-            let t = use_theme().unwrap();
+            let t = use_theme();
             assert_eq!(t, Theme::dark());
-        })
-        .unwrap();
+        });
         dusty_reactive::dispose_runtime();
     }
 
@@ -192,10 +187,9 @@ mod tests {
     fn fallback_to_light_when_no_provider() {
         dusty_reactive::initialize_runtime();
         let _scope = dusty_reactive::create_scope(|_s| {
-            let t = use_theme().unwrap();
+            let t = use_theme();
             assert_eq!(t, Theme::light());
-        })
-        .unwrap();
+        });
         dusty_reactive::dispose_runtime();
     }
 }

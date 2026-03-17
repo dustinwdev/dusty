@@ -464,7 +464,7 @@ macro_rules! impl_hue_methods {
                     match $hue.get(stop) {
                         Some(color) => self.bg(color),
                         None => {
-                            debug_assert!(false, "invalid palette stop: {stop}");
+                            eprintln!("dusty: invalid palette stop: {stop}");
                             self
                         }
                     }
@@ -477,7 +477,7 @@ macro_rules! impl_hue_methods {
                     match $hue.get(stop) {
                         Some(color) => self.text_color(color),
                         None => {
-                            debug_assert!(false, "invalid palette stop: {stop}");
+                            eprintln!("dusty: invalid palette stop: {stop}");
                             self
                         }
                     }
@@ -796,7 +796,7 @@ impl Style {
             (0.0..=1.0).contains(&value),
             "opacity out of range: {value}"
         );
-        self.opacity = Some(value);
+        self.opacity = Some(value.clamp(0.0, 1.0));
         self
     }
 
@@ -1171,11 +1171,11 @@ mod tests {
         assert_eq!(s.background, None);
     }
 
-    #[cfg(debug_assertions)]
     #[test]
-    #[should_panic(expected = "invalid palette stop")]
-    fn invalid_palette_stop_panics_in_debug() {
-        let _ = Style::default().bg_blue(42);
+    fn invalid_palette_stop_logs_and_returns_unchanged() {
+        // eprintln warning emitted but no panic — style returned unchanged
+        let s = Style::default().bg_blue(42);
+        assert_eq!(s.background, None);
     }
 
     #[test]
@@ -1323,6 +1323,15 @@ mod tests {
     #[should_panic(expected = "out of range")]
     fn opacity_rejects_above_one() {
         let _ = Style::default().opacity(1.5);
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn opacity_out_of_range_clamped() {
+        let s = Style::default().opacity(1.5);
+        assert_eq!(s.opacity, Some(1.0));
+        let s = Style::default().opacity(-0.5);
+        assert_eq!(s.opacity, Some(0.0));
     }
 
     #[test]

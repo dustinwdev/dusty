@@ -61,11 +61,10 @@ fn type_sequence_accumulates() {
         )
         .unwrap();
 
-        let val = state.value.get().unwrap();
+        let val = state.value.get();
         assert_eq!(val, "hi");
-        assert_eq!(state.cursor.get().unwrap(), 2);
-    })
-    .unwrap();
+        assert_eq!(state.cursor.get(), 2);
+    });
     dispose_runtime();
 }
 
@@ -73,7 +72,7 @@ fn type_sequence_accumulates() {
 fn controlled_round_trip() {
     initialize_runtime();
     create_scope(|cx| {
-        let sig = create_signal("init".to_string()).unwrap();
+        let sig = create_signal("init".to_string());
         let node = TextInput::new().controlled(sig).build(cx);
         let inner = inner_node(&node);
 
@@ -87,9 +86,8 @@ fn controlled_round_trip() {
         )
         .unwrap();
 
-        assert_eq!(sig.get().unwrap(), "init!");
-    })
-    .unwrap();
+        assert_eq!(sig.get(), "init!");
+    });
     dispose_runtime();
 }
 
@@ -102,7 +100,7 @@ fn backspace_at_position_zero_is_noop() {
         let state = get_state(&node);
 
         // Move cursor to 0
-        let _ = state.cursor.set(0);
+        state.cursor.set(0);
 
         dispatch_event(
             inner,
@@ -114,10 +112,9 @@ fn backspace_at_position_zero_is_noop() {
         )
         .unwrap();
 
-        assert_eq!(state.value.get().unwrap(), "abc");
-        assert_eq!(state.cursor.get().unwrap(), 0);
-    })
-    .unwrap();
+        assert_eq!(state.value.get(), "abc");
+        assert_eq!(state.cursor.get(), 0);
+    });
     dispose_runtime();
 }
 
@@ -140,10 +137,9 @@ fn backspace_deletes_before_cursor() {
         )
         .unwrap();
 
-        assert_eq!(state.value.get().unwrap(), "ab");
-        assert_eq!(state.cursor.get().unwrap(), 2);
-    })
-    .unwrap();
+        assert_eq!(state.value.get(), "ab");
+        assert_eq!(state.cursor.get(), 2);
+    });
     dispose_runtime();
 }
 
@@ -155,7 +151,7 @@ fn delete_key_deletes_after_cursor() {
         let inner = inner_node(&node);
         let state = get_state(&node);
 
-        let _ = state.cursor.set(0);
+        state.cursor.set(0);
         dispatch_event(
             inner,
             &[],
@@ -166,10 +162,9 @@ fn delete_key_deletes_after_cursor() {
         )
         .unwrap();
 
-        assert_eq!(state.value.get().unwrap(), "bc");
-        assert_eq!(state.cursor.get().unwrap(), 0);
-    })
-    .unwrap();
+        assert_eq!(state.value.get(), "bc");
+        assert_eq!(state.cursor.get(), 0);
+    });
     dispose_runtime();
 }
 
@@ -191,7 +186,7 @@ fn arrow_keys_move_cursor() {
             },
         )
         .unwrap();
-        assert_eq!(state.cursor.get().unwrap(), 2);
+        assert_eq!(state.cursor.get(), 2);
 
         dispatch_event(
             inner,
@@ -202,9 +197,8 @@ fn arrow_keys_move_cursor() {
             },
         )
         .unwrap();
-        assert_eq!(state.cursor.get().unwrap(), 3);
-    })
-    .unwrap();
+        assert_eq!(state.cursor.get(), 3);
+    });
     dispose_runtime();
 }
 
@@ -225,7 +219,7 @@ fn home_and_end() {
             },
         )
         .unwrap();
-        assert_eq!(state.cursor.get().unwrap(), 0);
+        assert_eq!(state.cursor.get(), 0);
 
         dispatch_event(
             inner,
@@ -236,9 +230,8 @@ fn home_and_end() {
             },
         )
         .unwrap();
-        assert_eq!(state.cursor.get().unwrap(), 5);
-    })
-    .unwrap();
+        assert_eq!(state.cursor.get(), 5);
+    });
     dispose_runtime();
 }
 
@@ -268,8 +261,7 @@ fn enter_fires_on_submit() {
         .unwrap();
 
         assert_eq!(*submitted.borrow(), "done");
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -281,7 +273,7 @@ fn max_length_enforced() {
         let inner = inner_node(&node);
         let state = get_state(&node);
 
-        // Type "abcd" — only first 3 chars should be accepted
+        // Type "abcd" -- only first 3 chars should be accepted
         for ch in &["a", "b", "c", "d"] {
             dispatch_event(
                 inner,
@@ -293,9 +285,8 @@ fn max_length_enforced() {
             .unwrap();
         }
 
-        assert_eq!(state.value.get().unwrap(), "abc");
-    })
-    .unwrap();
+        assert_eq!(state.value.get(), "abc");
+    });
     dispose_runtime();
 }
 
@@ -309,7 +300,7 @@ fn read_only_allows_focus_but_not_mutation() {
 
         // Focus should work
         dispatch_event(inner, &[], &FocusEvent).unwrap();
-        assert_eq!(state.focused.get().unwrap(), true);
+        assert_eq!(state.focused.get(), true);
 
         // Text input should be suppressed
         dispatch_event(
@@ -320,7 +311,7 @@ fn read_only_allows_focus_but_not_mutation() {
             },
         )
         .unwrap();
-        assert_eq!(state.value.get().unwrap(), "fixed");
+        assert_eq!(state.value.get(), "fixed");
 
         // Backspace should be suppressed
         dispatch_event(
@@ -332,9 +323,8 @@ fn read_only_allows_focus_but_not_mutation() {
             },
         )
         .unwrap();
-        assert_eq!(state.value.get().unwrap(), "fixed");
-    })
-    .unwrap();
+        assert_eq!(state.value.get(), "fixed");
+    });
     dispose_runtime();
 }
 
@@ -346,15 +336,14 @@ fn focus_blur_tracking() {
         let inner = inner_node(&node);
         let state = get_state(&node);
 
-        assert_eq!(state.focused.get().unwrap(), false);
+        assert_eq!(state.focused.get(), false);
 
         dispatch_event(inner, &[], &FocusEvent).unwrap();
-        assert_eq!(state.focused.get().unwrap(), true);
+        assert_eq!(state.focused.get(), true);
 
         dispatch_event(inner, &[], &BlurEvent).unwrap();
-        assert_eq!(state.focused.get().unwrap(), false);
-    })
-    .unwrap();
+        assert_eq!(state.focused.get(), false);
+    });
     dispose_runtime();
 }
 
@@ -382,7 +371,6 @@ fn on_change_fires() {
         .unwrap();
 
         assert_eq!(*changed.borrow(), "x");
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

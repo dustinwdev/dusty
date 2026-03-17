@@ -7,6 +7,7 @@
     clippy::cast_possible_truncation
 )]
 
+use dusty_core::event::{ClickEvent, FocusEvent, HoverEvent};
 use dusty_core::{el, text, text_dynamic, ComponentNode, Node};
 use dusty_devtools::inspector::{inspect, InspectorNodeKind, NodeBounds};
 use dusty_devtools::DevtoolsError;
@@ -36,7 +37,7 @@ impl TextMeasure for MockMeasure {
 
 fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
     initialize_runtime();
-    create_scope(|cx| f(cx)).unwrap();
+    create_scope(|cx| f(cx));
     dispose_runtime();
 }
 
@@ -209,9 +210,9 @@ fn no_style_returns_none() {
 fn event_handlers_listed_by_name() {
     with_scope(|cx| {
         let node = el("Button", cx)
-            .on_click(|_ctx, _e| {})
-            .on_hover(|_ctx, _e| {})
-            .on_focus(|_ctx, _e| {})
+            .on_click(|_e: &ClickEvent| {})
+            .on_hover(|_e: &HoverEvent| {})
+            .on_focus(|_e: &FocusEvent| {})
             .build_node();
         let tree = inspect(&node, None).unwrap();
 

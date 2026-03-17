@@ -16,12 +16,11 @@ fn with_runtime(f: impl FnOnce()) {
 fn theme_provides_and_retrieves() {
     with_runtime(|| {
         let scope = create_scope(|_s| {
-            provide_theme(Theme::dark()).unwrap();
-            let theme = use_theme().unwrap();
+            provide_theme(Theme::dark());
+            let theme = use_theme();
             assert_eq!(theme, Theme::dark());
-        })
-        .unwrap();
-        dispose_scope(scope).unwrap();
+        });
+        dispose_scope(scope);
     });
 }
 
@@ -29,15 +28,13 @@ fn theme_provides_and_retrieves() {
 fn theme_inherited_by_child() {
     with_runtime(|| {
         let scope = create_scope(|p| {
-            provide_theme(Theme::dark()).unwrap();
+            provide_theme(Theme::dark());
             let _child = create_child_scope(p, |_c| {
-                let theme = use_theme().unwrap();
+                let theme = use_theme();
                 assert_eq!(theme, Theme::dark());
-            })
-            .unwrap();
-        })
-        .unwrap();
-        dispose_scope(scope).unwrap();
+            });
+        });
+        dispose_scope(scope);
     });
 }
 
@@ -45,17 +42,15 @@ fn theme_inherited_by_child() {
 fn theme_child_override_does_not_affect_parent() {
     with_runtime(|| {
         let scope = create_scope(|p| {
-            provide_theme(Theme::dark()).unwrap();
+            provide_theme(Theme::dark());
             let _child = create_child_scope(p, |_c| {
-                provide_theme(Theme::light()).unwrap();
-                assert_eq!(use_theme().unwrap(), Theme::light());
-            })
-            .unwrap();
+                provide_theme(Theme::light());
+                assert_eq!(use_theme(), Theme::light());
+            });
             // Parent still sees dark
-            assert_eq!(use_theme().unwrap(), Theme::dark());
-        })
-        .unwrap();
-        dispose_scope(scope).unwrap();
+            assert_eq!(use_theme(), Theme::dark());
+        });
+        dispose_scope(scope);
     });
 }
 
@@ -63,11 +58,10 @@ fn theme_child_override_does_not_affect_parent() {
 fn theme_defaults_to_light() {
     with_runtime(|| {
         let scope = create_scope(|_s| {
-            let theme = use_theme().unwrap();
+            let theme = use_theme();
             assert_eq!(theme, Theme::light());
-        })
-        .unwrap();
-        dispose_scope(scope).unwrap();
+        });
+        dispose_scope(scope);
     });
 }
 
@@ -75,8 +69,8 @@ fn theme_defaults_to_light() {
 fn theme_with_style_builder() {
     with_runtime(|| {
         let scope = create_scope(|_s| {
-            provide_theme(Theme::dark()).unwrap();
-            let theme = use_theme().unwrap();
+            provide_theme(Theme::dark());
+            let theme = use_theme();
 
             let card = Style::default()
                 .p(4.0)
@@ -88,9 +82,8 @@ fn theme_with_style_builder() {
             assert_eq!(card.background, Some(theme.surface));
             assert_eq!(card.foreground, Some(theme.foreground));
             assert_eq!(card.border_color, Some(theme.border));
-        })
-        .unwrap();
-        dispose_scope(scope).unwrap();
+        });
+        dispose_scope(scope);
     });
 }
 

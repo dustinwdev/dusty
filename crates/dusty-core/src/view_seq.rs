@@ -63,7 +63,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 

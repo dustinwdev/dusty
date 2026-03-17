@@ -50,7 +50,7 @@ struct TextNodeContext {
 ///         .build_node();
 ///     let result = compute_layout(&node, 400.0, 300.0, &Mock).unwrap();
 ///     assert_eq!(result.len(), 1);
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub fn compute_layout(
@@ -59,93 +59,161 @@ pub fn compute_layout(
     available_height: f32,
     text_measure: &dyn TextMeasure,
 ) -> Result<LayoutResult> {
-    let mut builder = TreeBuilder {
-        taffy: TaffyTree::new(),
-        taffy_to_layout: HashMap::new(),
-        next_id: 0,
-    };
-
-    let root_taffy_ids = builder.build_node(root, &FontStyle::default())?;
-
-    if root_taffy_ids.is_empty() {
-        return Err(LayoutError::EmptyTree);
-    }
-
-    // If multiple root-level nodes (e.g. root is a Fragment), wrap in a synthetic container.
-    let taffy_root = if root_taffy_ids.len() == 1 {
-        root_taffy_ids[0]
-    } else {
-        let layout_id = builder.alloc_id();
-        let synthetic = builder
-            .taffy
-            .new_with_children(taffy::Style::DEFAULT, &root_taffy_ids)?;
-        builder.taffy_to_layout.insert(synthetic, layout_id);
-        synthetic
-    };
-
-    let total_nodes = builder.next_id;
-
-    // Phase B: compute layout
-    builder.taffy.compute_layout_with_measure(
-        taffy_root,
-        taffy::Size {
-            width: AvailableSpace::Definite(available_width),
-            height: AvailableSpace::Definite(available_height),
-        },
-        |known_dimensions, available_space, _node_id, context, _style| {
-            if let Some(ctx) = context {
-                let max_width = match available_space.width {
-                    AvailableSpace::Definite(w) => Some(w),
-                    _ => None,
-                };
-                let (w, h) = text_measure.measure(&ctx.content, max_width, &ctx.font);
-                taffy::Size {
-                    width: known_dimensions.width.unwrap_or(w),
-                    height: known_dimensions.height.unwrap_or(h),
-                }
-            } else {
-                taffy::Size::ZERO
-            }
-        },
-    )?;
-
-    // Phase C: extract absolute positions
-    let mut rects = vec![
-        Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 0.0,
-            height: 0.0,
-        };
-        total_nodes
-    ];
-
-    extract_absolute(
-        &builder.taffy,
-        taffy_root,
-        0.0,
-        0.0,
-        &builder.taffy_to_layout,
-        &mut rects,
-    )?;
-
-    // Find the root LayoutNodeId
-    let root_layout_id = builder
-        .taffy_to_layout
-        .get(&taffy_root)
-        .copied()
-        .ok_or(LayoutError::EmptyTree)?;
-
-    Ok(LayoutResult::new(rects, root_layout_id))
+    let mut engine = LayoutEngine::new();
+    engine.compute(root, available_width, available_height, text_measure)
 }
 
-struct TreeBuilder {
+/// A reusable layout engine that caches the internal `TaffyTree` across calls.
+///
+/// Each [`compute`](Self::compute) call clears and reuses the underlying allocations,
+/// avoiding repeated heap allocation for the tree and map.
+///
+/// # Examples
+///
+/// ```
+/// use dusty_core::{Node, Element, el, text};
+/// use dusty_style::{Style, FontStyle};
+/// use dusty_layout::{LayoutEngine, TextMeasure};
+/// use dusty_reactive::{initialize_runtime, create_scope, dispose_runtime};
+///
+/// struct Mock;
+/// impl TextMeasure for Mock {
+///     fn measure(&self, _: &str, _: Option<f32>, _: &FontStyle) -> (f32, f32) {
+///         (50.0, 16.0)
+///     }
+/// }
+///
+/// initialize_runtime();
+/// create_scope(|cx| {
+///     let mut engine = LayoutEngine::new();
+///     let node = el("Root", cx)
+///         .style(Style { width: Some(400.0), height: Some(300.0), ..Style::default() })
+///         .build_node();
+///     let result = engine.compute(&node, 400.0, 300.0, &Mock).unwrap();
+///     assert_eq!(result.len(), 1);
+/// });
+/// dispose_runtime();
+/// ```
+pub struct LayoutEngine {
     taffy: TaffyTree<TextNodeContext>,
     taffy_to_layout: HashMap<NodeId, LayoutNodeId>,
+}
+
+impl LayoutEngine {
+    /// Creates a new layout engine with empty internal state.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            taffy: TaffyTree::new(),
+            taffy_to_layout: HashMap::new(),
+        }
+    }
+
+    /// Computes layout for a node tree, reusing internal allocations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LayoutError::EmptyTree`] if the tree contains no layout nodes.
+    pub fn compute(
+        &mut self,
+        root: &Node,
+        available_width: f32,
+        available_height: f32,
+        text_measure: &dyn TextMeasure,
+    ) -> Result<LayoutResult> {
+        self.taffy.clear();
+        self.taffy_to_layout.clear();
+
+        let mut builder = TreeBuilder {
+            taffy: &mut self.taffy,
+            taffy_to_layout: &mut self.taffy_to_layout,
+            next_id: 0,
+        };
+
+        let root_taffy_ids = builder.build_node(root, &FontStyle::default())?;
+
+        if root_taffy_ids.is_empty() {
+            return Err(LayoutError::EmptyTree);
+        }
+
+        let taffy_root = if root_taffy_ids.len() == 1 {
+            root_taffy_ids[0]
+        } else {
+            let layout_id = builder.alloc_id();
+            let synthetic = builder
+                .taffy
+                .new_with_children(taffy::Style::DEFAULT, &root_taffy_ids)?;
+            builder.taffy_to_layout.insert(synthetic, layout_id);
+            synthetic
+        };
+
+        let total_nodes = builder.next_id;
+
+        self.taffy.compute_layout_with_measure(
+            taffy_root,
+            taffy::Size {
+                width: AvailableSpace::Definite(available_width),
+                height: AvailableSpace::Definite(available_height),
+            },
+            |known_dimensions, available_space, _node_id, context, _style| {
+                if let Some(ctx) = context {
+                    let max_width = match available_space.width {
+                        AvailableSpace::Definite(w) => Some(w),
+                        _ => None,
+                    };
+                    let (w, h) = text_measure.measure(&ctx.content, max_width, &ctx.font);
+                    taffy::Size {
+                        width: known_dimensions.width.unwrap_or(w),
+                        height: known_dimensions.height.unwrap_or(h),
+                    }
+                } else {
+                    taffy::Size::ZERO
+                }
+            },
+        )?;
+
+        let mut rects = vec![
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 0.0,
+            };
+            total_nodes
+        ];
+
+        extract_absolute(
+            &self.taffy,
+            taffy_root,
+            0.0,
+            0.0,
+            &self.taffy_to_layout,
+            &mut rects,
+        )?;
+
+        let root_layout_id = self
+            .taffy_to_layout
+            .get(&taffy_root)
+            .copied()
+            .ok_or(LayoutError::EmptyTree)?;
+
+        Ok(LayoutResult::new(rects, root_layout_id))
+    }
+}
+
+impl Default for LayoutEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+struct TreeBuilder<'a> {
+    taffy: &'a mut TaffyTree<TextNodeContext>,
+    taffy_to_layout: &'a mut HashMap<NodeId, LayoutNodeId>,
     next_id: usize,
 }
 
-impl TreeBuilder {
+impl TreeBuilder<'_> {
     fn alloc_id(&mut self) -> LayoutNodeId {
         let id = LayoutNodeId(self.next_id);
         self.next_id += 1;
@@ -296,7 +364,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
         initialize_runtime();
-        create_scope(f).unwrap();
+        create_scope(f);
         dispose_runtime();
     }
 
@@ -704,6 +772,60 @@ mod tests {
             let child = result.get(LayoutNodeId(1)).unwrap();
             assert_eq!(child.x, 20.0); // left margin
             assert_eq!(child.y, 10.0); // top margin
+        });
+    }
+
+    #[test]
+    fn layout_engine_reuse_produces_correct_results() {
+        with_scope(|cx| {
+            let mut engine = LayoutEngine::new();
+
+            // First compute
+            let node1 = el("Box", cx)
+                .style(Style {
+                    width: Some(200.0),
+                    height: Some(100.0),
+                    ..Style::default()
+                })
+                .build_node();
+            let result1 = engine.compute(&node1, 400.0, 300.0, &MockMeasure).unwrap();
+            assert_eq!(result1.root_rect().unwrap().width, 200.0);
+
+            // Second compute reuses engine
+            let node2 = el("Box2", cx)
+                .style(Style {
+                    width: Some(300.0),
+                    height: Some(150.0),
+                    ..Style::default()
+                })
+                .build_node();
+            let result2 = engine.compute(&node2, 400.0, 300.0, &MockMeasure).unwrap();
+            assert_eq!(result2.root_rect().unwrap().width, 300.0);
+            assert_eq!(result2.root_rect().unwrap().height, 150.0);
+        });
+    }
+
+    #[test]
+    fn layout_engine_clear_resets_ids() {
+        with_scope(|cx| {
+            let mut engine = LayoutEngine::new();
+
+            let node = el("A", cx)
+                .style(Style {
+                    width: Some(100.0),
+                    height: Some(100.0),
+                    ..Style::default()
+                })
+                .build_node();
+
+            let result1 = engine.compute(&node, 400.0, 300.0, &MockMeasure).unwrap();
+            assert_eq!(result1.len(), 1);
+
+            // IDs should start fresh
+            let result2 = engine.compute(&node, 400.0, 300.0, &MockMeasure).unwrap();
+            assert_eq!(result2.len(), 1);
+            // Root should be at LayoutNodeId(0) both times
+            assert!(result2.get(LayoutNodeId(0)).is_some());
         });
     }
 }

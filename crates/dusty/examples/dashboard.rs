@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! Dashboard — Resource/Suspense, ErrorBoundary, ScrollView, Canvas, complex layout.
+//! Dashboard -- Resource/Suspense, ErrorBoundary, ScrollView, Canvas, complex layout.
 
 use dusty::prelude::*;
 use dusty::widgets::canvas::FillStyle;
@@ -42,11 +42,11 @@ fn main() {
         .width(1024.0)
         .height(768.0)
         .root(|cx| {
-            let refresh_trigger = create_signal(0u32).unwrap();
+            let refresh_trigger = create_signal(0u32);
 
             let stats_resource = create_resource(
-                move || refresh_trigger.get().unwrap(),
-                |_trigger, resolver| {
+                move || refresh_trigger.get(),
+                |_trigger: u32, resolver: ResourceResolver<DashboardStats>| {
                     resolver.resolve(DashboardStats {
                         users: 1234,
                         revenue: 56789,
@@ -54,12 +54,11 @@ fn main() {
                         active: 42,
                     });
                 },
-            )
-            .unwrap();
+            );
 
-            let activity_resource = create_resource(
-                move || refresh_trigger.get().unwrap(),
-                |_trigger, resolver| {
+            let activity_resource: Resource<Vec<Activity>> = create_resource(
+                move || refresh_trigger.get(),
+                |_trigger: u32, resolver: ResourceResolver<Vec<Activity>>| {
                     resolver.resolve(vec![
                         Activity {
                             id: 1,
@@ -88,11 +87,10 @@ fn main() {
                         },
                     ]);
                 },
-            )
-            .unwrap();
+            );
 
             // Build stat cards from resource data
-            let stats = stats_resource.get().unwrap();
+            let stats = stats_resource.get();
             let (users, revenue, orders, active) = stats.map_or(
                 ("---".into(), "---".into(), "---".into(), "---".into()),
                 |s| {
@@ -116,9 +114,9 @@ fn main() {
             let activity_for_ready = activity_resource.clone();
             let activity_for_child = activity_resource.clone();
 
-            let activity_feed = Suspense::new(move || activity_for_ready.get().unwrap().is_some())
+            let activity_feed = Suspense::new(move || activity_for_ready.get().is_some())
                 .child(move || {
-                    let activities = activity_for_child.get().unwrap().unwrap_or_default();
+                    let activities = activity_for_child.get().unwrap_or_default();
                     ScrollView::new()
                         .child(
                             For::<Activity, u32, Node>::new(move || activities.clone())
@@ -186,7 +184,7 @@ fn main() {
                     Text::new("Dashboard").build(cx),
                     Spacer::new().build(cx),
                     Button::new("Refresh").on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
-                        refresh_trigger.update(|n| *n += 1).unwrap();
+                        refresh_trigger.update(|n| *n += 1);
                     }).build(cx)
                 ],
                 Divider::horizontal().build(cx),

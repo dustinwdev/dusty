@@ -35,7 +35,7 @@ pub enum ScrollAxis {
 /// create_scope(|cx| {
 ///     let node = ScrollView::new().build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct ScrollView {
@@ -114,10 +114,7 @@ impl View for ScrollView {
             base
         };
 
-        let signal: Signal<(f64, f64)> = match create_signal((0.0, 0.0)) {
-            Ok(s) => s,
-            Err(_) => return Node::Fragment(vec![]),
-        };
+        let signal: Signal<(f64, f64)> = create_signal((0.0, 0.0));
 
         let axis_str = match self.axis {
             ScrollAxis::Vertical => "vertical",
@@ -132,7 +129,7 @@ impl View for ScrollView {
             .style(merged)
             .data(signal)
             .on_scroll(move |_ctx: &EventContext, e: &ScrollEvent| {
-                let current = signal.get().unwrap_or((0.0, 0.0));
+                let current = signal.get();
                 let raw = (current.0 + e.delta_x, current.1 + e.delta_y);
                 // Clamp: lower bound to 0.0, zero out irrelevant axis
                 // TODO: clamp upper bound when content_size is available from layout
@@ -141,7 +138,7 @@ impl View for ScrollView {
                     ScrollAxis::Horizontal => (raw.0.max(0.0), 0.0),
                     ScrollAxis::Both => (raw.0.max(0.0), raw.1.max(0.0)),
                 };
-                let _ = signal.set(clamped);
+                signal.set(clamped);
                 if let Some(ref cb) = on_scroll {
                     cb(e.delta_x, e.delta_y);
                 }
@@ -176,7 +173,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -300,7 +297,7 @@ mod tests {
                 .custom_data()
                 .downcast_ref::<Signal<(f64, f64)>>()
                 .unwrap();
-            let offset = sig.get().unwrap();
+            let offset = sig.get();
             assert!(
                 (offset.0).abs() < f64::EPSILON,
                 "x should be zeroed for vertical"
@@ -331,7 +328,7 @@ mod tests {
                 .custom_data()
                 .downcast_ref::<Signal<(f64, f64)>>()
                 .unwrap();
-            let offset = sig.get().unwrap();
+            let offset = sig.get();
             assert!(offset.1 >= 0.0, "scroll offset should not go negative");
         });
     }

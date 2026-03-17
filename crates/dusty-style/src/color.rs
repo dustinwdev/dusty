@@ -57,7 +57,12 @@ impl Color {
         debug_assert!((0.0..=1.0).contains(&g), "g out of range: {g}");
         debug_assert!((0.0..=1.0).contains(&b), "b out of range: {b}");
         debug_assert!((0.0..=1.0).contains(&a), "a out of range: {a}");
-        Self { r, g, b, a }
+        Self {
+            r: r.clamp(0.0, 1.0),
+            g: g.clamp(0.0, 1.0),
+            b: b.clamp(0.0, 1.0),
+            a: a.clamp(0.0, 1.0),
+        }
     }
 
     /// Creates an opaque color from RGB f32 values (0.0–1.0).
@@ -66,7 +71,12 @@ impl Color {
         debug_assert!((0.0..=1.0).contains(&r), "r out of range: {r}");
         debug_assert!((0.0..=1.0).contains(&g), "g out of range: {g}");
         debug_assert!((0.0..=1.0).contains(&b), "b out of range: {b}");
-        Self { r, g, b, a: 1.0 }
+        Self {
+            r: r.clamp(0.0, 1.0),
+            g: g.clamp(0.0, 1.0),
+            b: b.clamp(0.0, 1.0),
+            a: 1.0,
+        }
     }
 
     /// Creates a color from RGBA u8 values (0–255).
@@ -209,6 +219,16 @@ mod tests {
     #[should_panic(expected = "out of range")]
     fn rgba_rejects_negative_g() {
         let _ = Color::rgba(0.0, -0.5, 0.0, 1.0);
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn rgba_clamps_out_of_range() {
+        let c = Color::rgba(1.5, -0.1, 0.5, 2.0);
+        assert_eq!(c.r, 1.0);
+        assert_eq!(c.g, 0.0);
+        assert_eq!(c.b, 0.5);
+        assert_eq!(c.a, 1.0);
     }
 
     #[test]

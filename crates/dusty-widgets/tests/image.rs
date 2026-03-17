@@ -36,8 +36,7 @@ fn image_attribute_propagation() {
             el.attr("alt"),
             Some(&AttributeValue::String("Beautiful landscape".into()))
         );
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -48,7 +47,6 @@ fn image_element_name() {
         let node = Image::new("test.png").build(cx);
         let el = extract_element(&node);
         assert_eq!(el.name(), "Image");
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

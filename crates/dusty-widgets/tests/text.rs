@@ -18,8 +18,8 @@ fn extract_element(node: &Node) -> &Element {
 fn text_with_signal_updates_dynamically() {
     initialize_runtime();
     create_scope(|cx| {
-        let name = create_signal("Alice".to_string()).unwrap();
-        let node = Text::dynamic(move || format!("Hello, {}!", name.get().unwrap())).build(cx);
+        let name = create_signal("Alice".to_string());
+        let node = Text::dynamic(move || format!("Hello, {}!", name.get())).build(cx);
         let el = extract_element(&node);
 
         if let Node::Text(text_node) = &el.children()[0] {
@@ -27,13 +27,12 @@ fn text_with_signal_updates_dynamically() {
             assert!(matches!(text_node.content, TextContent::Dynamic(_)));
 
             // Update signal
-            name.set("Bob".to_string()).unwrap();
+            name.set("Bob".to_string());
             assert_eq!(text_node.current_text(), "Hello, Bob!");
         } else {
             panic!("expected Text child");
         }
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -50,7 +49,6 @@ fn text_static_content() {
         } else {
             panic!("expected Text child");
         }
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

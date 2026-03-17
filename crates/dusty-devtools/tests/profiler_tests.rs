@@ -108,7 +108,7 @@ fn end_without_begin_no_recording() {
 #[test]
 fn snapshot_reads_runtime() {
     initialize_runtime();
-    let _sig = create_signal(42).unwrap();
+    let _sig = create_signal(42);
 
     let snap = snapshot_runtime().unwrap();
     assert_eq!(snap.live_signals, 1);
@@ -120,11 +120,11 @@ fn snapshot_reads_runtime() {
 #[test]
 fn diff_detects_signal_changes() {
     initialize_runtime();
-    let sig = create_signal(0).unwrap();
+    let sig = create_signal(0);
 
     let before = snapshot_runtime().unwrap();
-    sig.set(1).unwrap();
-    sig.set(2).unwrap();
+    sig.set(1);
+    sig.set(2);
     let after = snapshot_runtime().unwrap();
 
     let report = diff_snapshots(&before, &after);
@@ -137,7 +137,7 @@ fn diff_detects_signal_changes() {
 #[test]
 fn diff_no_changes_empty_deltas() {
     initialize_runtime();
-    let _sig = create_signal(0).unwrap();
+    let _sig = create_signal(0);
 
     let before = snapshot_runtime().unwrap();
     let after = snapshot_runtime().unwrap();
@@ -151,14 +151,14 @@ fn diff_no_changes_empty_deltas() {
 #[test]
 fn diff_multiple_signals() {
     initialize_runtime();
-    let sig_a = create_signal(0).unwrap();
-    let sig_b = create_signal(0).unwrap();
-    let _sig_c = create_signal(0).unwrap(); // unchanged
+    let sig_a = create_signal(0);
+    let sig_b = create_signal(0);
+    let _sig_c = create_signal(0); // unchanged
 
     let before = snapshot_runtime().unwrap();
-    sig_a.set(1).unwrap();
-    sig_b.set(1).unwrap();
-    sig_b.set(2).unwrap();
+    sig_a.set(1);
+    sig_b.set(1);
+    sig_b.set(2);
     let after = snapshot_runtime().unwrap();
 
     let report = diff_snapshots(&before, &after);

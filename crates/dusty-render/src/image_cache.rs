@@ -3,7 +3,7 @@
 //! Each image gets its own GPU texture (not atlased), since images
 //! vary significantly in size.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 
 use crate::error::{RenderError, Result};
@@ -35,6 +35,7 @@ pub struct DecodedImage {
 /// An entry in the image cache.
 struct ImageEntry {
     decoded: DecodedImage,
+    source: ImageSource,
     last_used: u64,
 }
 
@@ -46,6 +47,7 @@ struct ImageEntry {
 pub struct ImageCache {
     entries: HashMap<ImageId, ImageEntry>,
     source_to_id: HashMap<ImageSource, ImageId>,
+    lru_order: BTreeSet<(u64, ImageId)>,
     next_id: u64,
     generation: u64,
     total_bytes: usize,
@@ -59,6 +61,7 @@ impl ImageCache {
         Self {
             entries: HashMap::new(),
             source_to_id: HashMap::new(),
+            lru_order: BTreeSet::new(),
             next_id: 0,
             generation: 0,
             total_bytes: 0,
@@ -72,6 +75,7 @@ impl ImageCache {
         Self {
             entries: HashMap::new(),
             source_to_id: HashMap::new(),
+            lru_order: BTreeSet::new(),
             next_id: 0,
             generation: 0,
             total_bytes: 0,
@@ -102,7 +106,10 @@ impl ImageCache {
         // Return existing ID if already loaded
         if let Some(&id) = self.source_to_id.get(&source) {
             if let Some(entry) = self.entries.get_mut(&id) {
+                let old_gen = entry.last_used;
+                self.lru_order.remove(&(old_gen, id));
                 entry.last_used = self.generation;
+                self.lru_order.insert((self.generation, id));
             }
             return Ok(id);
         }
@@ -129,10 +136,12 @@ impl ImageCache {
             id,
             ImageEntry {
                 decoded,
+                source: source.clone(),
                 last_used: self.generation,
             },
         );
         self.source_to_id.insert(source, id);
+        self.lru_order.insert((self.generation, id));
         self.total_bytes += expected_len;
         self.enforce_budget();
         Ok(id)
@@ -147,7 +156,10 @@ impl ImageCache {
     pub fn load_png_bytes(&mut self, source: ImageSource, bytes: &[u8]) -> Result<ImageId> {
         if let Some(&id) = self.source_to_id.get(&source) {
             if let Some(entry) = self.entries.get_mut(&id) {
+                let old_gen = entry.last_used;
+                self.lru_order.remove(&(old_gen, id));
                 entry.last_used = self.generation;
+                self.lru_order.insert((self.generation, id));
             }
             return Ok(id);
         }
@@ -169,10 +181,12 @@ impl ImageCache {
             id,
             ImageEntry {
                 decoded,
+                source: source.clone(),
                 last_used: self.generation,
             },
         );
         self.source_to_id.insert(source, id);
+        self.lru_order.insert((self.generation, id));
         Ok(id)
     }
 
@@ -189,21 +203,14 @@ impl ImageCache {
 
     /// Evicts least-recently-used images until memory usage is within budget.
     pub fn enforce_budget(&mut self) {
-        while self.total_bytes > self.max_bytes && !self.entries.is_empty() {
-            // Find the LRU entry
-            let lru_id = self
-                .entries
-                .iter()
-                .min_by_key(|(_, e)| e.last_used)
-                .map(|(&id, _)| id);
-
-            if let Some(id) = lru_id {
-                if let Some(entry) = self.entries.remove(&id) {
-                    self.total_bytes = self.total_bytes.saturating_sub(entry.decoded.data.len());
-                }
-                self.source_to_id.retain(|_, v| *v != id);
-            } else {
+        while self.total_bytes > self.max_bytes {
+            let Some(&(gen, id)) = self.lru_order.iter().next() else {
                 break;
+            };
+            self.lru_order.remove(&(gen, id));
+            if let Some(entry) = self.entries.remove(&id) {
+                self.total_bytes = self.total_bytes.saturating_sub(entry.decoded.data.len());
+                self.source_to_id.remove(&entry.source);
             }
         }
     }
@@ -221,10 +228,10 @@ impl ImageCache {
         for id in &to_remove {
             if let Some(entry) = self.entries.remove(id) {
                 self.total_bytes = self.total_bytes.saturating_sub(entry.decoded.data.len());
+                self.source_to_id.remove(&entry.source);
+                self.lru_order.remove(&(entry.last_used, *id));
             }
         }
-
-        self.source_to_id.retain(|_, id| !to_remove.contains(id));
     }
 
     /// Returns the number of cached images.
@@ -396,5 +403,35 @@ mod tests {
             .load_rgba(ImageSource::Bytes { key: 2 }, make_rgba(4, 4), 4, 4)
             .unwrap();
         assert_eq!(cache.memory_usage(), 2 * 2 * 4 + 4 * 4 * 4);
+    }
+
+    #[test]
+    fn eviction_order_respects_lru() {
+        // Budget: 32 bytes (two 2x2 images = 16 bytes each)
+        let mut cache = ImageCache::with_budget(32);
+        let id1 = cache
+            .load_rgba(ImageSource::Bytes { key: 1 }, make_rgba(2, 2), 2, 2)
+            .unwrap();
+        cache.advance_generation();
+        let id2 = cache
+            .load_rgba(ImageSource::Bytes { key: 2 }, make_rgba(2, 2), 2, 2)
+            .unwrap();
+        cache.advance_generation();
+
+        // Touch id1 to make it more recent than id2
+        cache
+            .load_rgba(ImageSource::Bytes { key: 1 }, make_rgba(2, 2), 2, 2)
+            .unwrap();
+
+        // Load a third that exceeds budget — should evict id2 (oldest)
+        let _id3 = cache
+            .load_rgba(ImageSource::Bytes { key: 3 }, make_rgba(2, 2), 2, 2)
+            .unwrap();
+
+        assert!(
+            cache.get(id1).is_some(),
+            "id1 should survive (was touched recently)"
+        );
+        assert!(cache.get(id2).is_none(), "id2 should be evicted (oldest)");
     }
 }

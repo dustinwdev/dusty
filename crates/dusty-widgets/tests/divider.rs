@@ -29,8 +29,7 @@ fn horizontal_divider_dimensions() {
             el.attr("orientation"),
             Some(&AttributeValue::String("horizontal".into()))
         );
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -48,7 +47,6 @@ fn vertical_divider_dimensions() {
             el.attr("orientation"),
             Some(&AttributeValue::String("vertical".into()))
         );
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

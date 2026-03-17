@@ -195,7 +195,7 @@ pub struct TextPrimitive {
 }
 
 /// Opaque identifier for a loaded image texture.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ImageId(pub u64);
 
 /// An image draw primitive.

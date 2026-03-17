@@ -15,13 +15,13 @@ use dusty_reactive::Scope;
 ///
 /// initialize_runtime();
 /// create_scope(|cx| {
-///     let visible = create_signal(true).unwrap();
-///     let node = Show::new(move || visible.get().unwrap_or(false))
+///     let visible = create_signal(true);
+///     let node = Show::new(move || visible.get())
 ///         .child(|| Node::Text(text("shown")))
 ///         .fallback(|| Node::Text(text("hidden")))
 ///         .build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Show {
@@ -106,7 +106,7 @@ mod tests {
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
         let _guard = RuntimeGuard;
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
     }
 
     fn resolve_dynamic(node: &Node) -> Node {
@@ -166,8 +166,8 @@ mod tests {
     #[test]
     fn reactive_condition_switches() {
         with_scope(|cx| {
-            let sig = create_signal(true).unwrap();
-            let node = Show::new(move || sig.get().unwrap_or(false))
+            let sig = create_signal(true);
+            let node = Show::new(move || sig.get())
                 .child(|| Node::Text(text("on")))
                 .fallback(|| Node::Text(text("off")))
                 .build(cx);
@@ -180,7 +180,7 @@ mod tests {
             }
 
             // Flip to false — should render fallback
-            let _ = sig.set(false);
+            sig.set(false);
             let resolved = resolve_dynamic(&node);
             assert!(resolved.is_text());
             if let Node::Text(t) = resolved {

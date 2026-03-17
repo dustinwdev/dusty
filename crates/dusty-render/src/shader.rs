@@ -69,8 +69,10 @@ fn vs_main(
 ) -> VertexOutput {
     let prim = primitives[instance_index];
 
-    // Expand rect for shadows (blur radius extends beyond the rect)
-    let blur_expand = prim.params.z * 3.0;
+    // Expand rect for shadows (blur radius extends beyond the rect).
+    // sigma = blur_radius / 2.0; smoothstep range = 1.5 * sigma = 0.75 * blur_radius.
+    // Using 1.0x provides ~33% headroom over the 0.75x mathematical minimum.
+    let blur_expand = prim.params.z * 1.0;
     let rect_x = prim.rect.x - blur_expand;
     let rect_y = prim.rect.y - blur_expand;
     let rect_w = prim.rect.z + blur_expand * 2.0;

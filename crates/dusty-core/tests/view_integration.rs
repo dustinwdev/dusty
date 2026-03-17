@@ -5,7 +5,7 @@ use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_ru
 
 fn with_scope(f: impl FnOnce(Scope)) {
     initialize_runtime();
-    create_scope(|cx| f(cx)).unwrap();
+    create_scope(|cx| f(cx));
     dispose_runtime();
 }
 
@@ -97,19 +97,18 @@ fn component_node_wraps_child() {
 fn reactive_text_with_signal() {
     with_scope(|cx| {
         cx.run(|| {
-            let count = create_signal(0i32).unwrap();
+            let count = create_signal(0i32);
 
-            let text_node = text_dynamic(move || format!("Count: {}", count.get().unwrap()));
+            let text_node = text_dynamic(move || format!("Count: {}", count.get()));
 
             assert_eq!(text_node.current_text(), "Count: 0");
 
-            count.set(42).unwrap();
+            count.set(42);
             assert_eq!(text_node.current_text(), "Count: 42");
 
-            count.set(100).unwrap();
+            count.set(100);
             assert_eq!(text_node.current_text(), "Count: 100");
-        })
-        .unwrap();
+        });
     });
 }
 

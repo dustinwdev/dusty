@@ -110,7 +110,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -223,8 +223,8 @@ mod tests {
     #[test]
     fn text_dynamic() {
         with_scope(|cx| {
-            let sig = create_signal(10i32).unwrap();
-            let widget = text!(=> format!("val: {}", sig.get().unwrap()));
+            let sig = create_signal(10i32);
+            let widget = text!(=> format!("val: {}", sig.get()));
             let node = widget.build(cx);
             let el = extract_component_element(&node);
             if let Node::Text(t) = &el.children()[0] {
@@ -270,8 +270,8 @@ mod tests {
     #[test]
     fn button_dynamic() {
         with_scope(|cx| {
-            let sig = create_signal(7i32).unwrap();
-            let widget = button!(=> format!("n={}", sig.get().unwrap()));
+            let sig = create_signal(7i32);
+            let widget = button!(=> format!("n={}", sig.get()));
             let node = widget.build(cx);
             let el = extract_component_element(&node);
             if let Node::Text(t) = &el.children()[0] {

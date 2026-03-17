@@ -82,7 +82,7 @@ pub struct AuditResult {
 ///     let node = el("Button", cx).build_node();
 ///     let result = audit(&node);
 ///     assert!(result.issues.iter().any(|i| i.rule == AuditRule::MissingLabel));
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 #[must_use]
@@ -253,12 +253,13 @@ impl AuditWalker {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use dusty_core::event::ClickEvent;
     use dusty_core::{el, text};
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
 
     fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -409,7 +410,9 @@ mod tests {
     #[test]
     fn interactive_generic_container() {
         with_scope(|cx| {
-            let node = el("CustomWidget", cx).on_click(|_ctx, _e| {}).build_node();
+            let node = el("CustomWidget", cx)
+                .on_click(|_e: &ClickEvent| {})
+                .build_node();
             let result = audit(&node);
             assert!(result
                 .issues
@@ -443,7 +446,7 @@ mod tests {
         with_scope(|cx| {
             let node = el("Button", cx)
                 .attr("label", "OK")
-                .on_click(|_ctx, _e| {})
+                .on_click(|_e: &ClickEvent| {})
                 .build_node();
             let result = audit(&node);
             // Button maps to Role::Button, not GenericContainer

@@ -1,7 +1,7 @@
 # Panicking vs Result-Returning Reactive API
 
 ## Status
-Proposed
+Implemented
 
 ## Context
 

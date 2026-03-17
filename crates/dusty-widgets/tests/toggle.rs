@@ -15,21 +15,20 @@ fn inner_node(node: &Node) -> &Node {
 fn controlled_round_trip() {
     initialize_runtime();
     create_scope(|cx| {
-        let sig = create_signal(false).unwrap();
+        let sig = create_signal(false);
         let node = Toggle::new().controlled(sig).build(cx);
 
-        assert_eq!(sig.get().unwrap(), false);
+        assert_eq!(sig.get(), false);
 
         let inner = inner_node(&node);
         let event = ClickEvent { x: 0.0, y: 0.0 };
         dispatch_event(inner, &[], &event).unwrap();
 
-        assert_eq!(sig.get().unwrap(), true);
+        assert_eq!(sig.get(), true);
 
         dispatch_event(inner, &[], &event).unwrap();
-        assert_eq!(sig.get().unwrap(), false);
-    })
-    .unwrap();
+        assert_eq!(sig.get(), false);
+    });
     dispose_runtime();
 }
 
@@ -50,7 +49,6 @@ fn on_change_receives_new_value() {
         dispatch_event(inner, &[], &event).unwrap();
 
         assert_eq!(received.get(), Some(true));
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

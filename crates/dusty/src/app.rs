@@ -115,20 +115,17 @@ impl App {
 
         dusty_reactive::initialize_runtime();
 
-        let scope_result = dusty_reactive::create_scope(|cx| {
-            // Provide theme — ignore error since scope is guaranteed active here
-            let _ = provide_theme(theme);
+        let root_scope = dusty_reactive::create_scope(|cx| {
+            provide_theme(theme);
             let _node = root_fn(cx);
             // Node is built; render integration happens in Phase 22
         });
-
-        let root_scope = scope_result?;
 
         let platform_result = dusty_platform::run(self.config, |_window, event| {
             matches!(event, AppEvent::Platform(PlatformEvent::CloseRequested))
         });
 
-        let _ = dusty_reactive::dispose_scope(root_scope);
+        dusty_reactive::dispose_scope(root_scope);
         dusty_reactive::dispose_runtime();
 
         platform_result?;

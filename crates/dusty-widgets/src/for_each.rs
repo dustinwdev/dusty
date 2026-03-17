@@ -18,7 +18,7 @@
 //!         .view(|x: i32| Node::Text(text(format!("{x}"))))
 //!         .build(cx);
 //!     assert!(node.is_component());
-//! }).unwrap();
+//! });
 //! dispose_runtime();
 //! ```
 
@@ -48,7 +48,7 @@ type KeyFn<T, K> = Box<dyn Fn(&T) -> K>;
 ///         .view(|x: i32| Node::Text(text(format!("{x}"))))
 ///         .build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct For<T, K, V>
@@ -159,7 +159,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -222,9 +222,9 @@ mod tests {
     #[test]
     fn reactive_list_updates() {
         with_scope(|cx| {
-            let items = create_signal(vec![1, 2]).unwrap();
+            let items = create_signal(vec![1, 2]);
 
-            let node = For::<i32, i32, Node>::new(move || items.get().unwrap())
+            let node = For::<i32, i32, Node>::new(move || items.get())
                 .key(|x: &i32| *x)
                 .view(|x: i32| Node::Text(text(format!("{x}"))))
                 .build(cx);
@@ -232,7 +232,7 @@ mod tests {
             let resolved = resolve_dynamic(&node);
             assert_eq!(fragment_len(&resolved), 2);
 
-            items.set(vec![1, 2, 3]).unwrap();
+            items.set(vec![1, 2, 3]);
 
             let resolved = resolve_dynamic(&node);
             assert_eq!(fragment_len(&resolved), 3);
@@ -242,9 +242,9 @@ mod tests {
     #[test]
     fn add_item() {
         with_scope(|cx| {
-            let items = create_signal(vec![10, 20]).unwrap();
+            let items = create_signal(vec![10, 20]);
 
-            let node = For::<i32, i32, Node>::new(move || items.get().unwrap())
+            let node = For::<i32, i32, Node>::new(move || items.get())
                 .key(|x: &i32| *x)
                 .view(|x: i32| Node::Text(text(format!("{x}"))))
                 .build(cx);
@@ -252,7 +252,7 @@ mod tests {
             let resolved = resolve_dynamic(&node);
             assert_eq!(fragment_len(&resolved), 2);
 
-            items.update(|v| v.push(30)).unwrap();
+            items.update(|v| v.push(30));
 
             let resolved = resolve_dynamic(&node);
             assert_eq!(fragment_len(&resolved), 3);
@@ -263,9 +263,9 @@ mod tests {
     #[test]
     fn remove_item() {
         with_scope(|cx| {
-            let items = create_signal(vec![1, 2, 3]).unwrap();
+            let items = create_signal(vec![1, 2, 3]);
 
-            let node = For::<i32, i32, Node>::new(move || items.get().unwrap())
+            let node = For::<i32, i32, Node>::new(move || items.get())
                 .key(|x: &i32| *x)
                 .view(|x: i32| Node::Text(text(format!("{x}"))))
                 .build(cx);
@@ -273,7 +273,7 @@ mod tests {
             let resolved = resolve_dynamic(&node);
             assert_eq!(fragment_len(&resolved), 3);
 
-            items.set(vec![1, 3]).unwrap();
+            items.set(vec![1, 3]);
 
             let resolved = resolve_dynamic(&node);
             assert_eq!(fragment_len(&resolved), 2);

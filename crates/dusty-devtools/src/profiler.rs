@@ -194,7 +194,7 @@ pub struct SignalDelta {
 /// use dusty_devtools::profiler::snapshot_runtime;
 ///
 /// initialize_runtime();
-/// let _sig = create_signal(42).unwrap();
+/// let _sig = create_signal(42);
 /// let snap = snapshot_runtime().unwrap();
 /// assert_eq!(snap.live_signals, 1);
 /// dispose_runtime();
@@ -236,10 +236,10 @@ pub fn snapshot_runtime() -> Result<RuntimeSnapshot> {
 /// use dusty_devtools::profiler::{snapshot_runtime, diff_snapshots};
 ///
 /// initialize_runtime();
-/// let sig = create_signal(0).unwrap();
+/// let sig = create_signal(0);
 /// let before = snapshot_runtime().unwrap();
-/// sig.set(1).unwrap();
-/// sig.set(2).unwrap();
+/// sig.set(1);
+/// sig.set(2);
 /// let after = snapshot_runtime().unwrap();
 ///
 /// let report = diff_snapshots(&before, &after);
@@ -386,7 +386,7 @@ mod tests {
     #[test]
     fn snapshot_reads_runtime_stats() {
         dusty_reactive::initialize_runtime();
-        let _sig = dusty_reactive::create_signal(42).unwrap();
+        let _sig = dusty_reactive::create_signal(42);
 
         let snap = snapshot_runtime().unwrap();
         assert_eq!(snap.live_signals, 1);
@@ -399,11 +399,11 @@ mod tests {
     #[test]
     fn diff_computes_deltas() {
         dusty_reactive::initialize_runtime();
-        let sig = dusty_reactive::create_signal(0).unwrap();
+        let sig = dusty_reactive::create_signal(0);
 
         let before = snapshot_runtime().unwrap();
-        sig.set(1).unwrap();
-        sig.set(2).unwrap();
+        sig.set(1);
+        sig.set(2);
         let after = snapshot_runtime().unwrap();
 
         let report = diff_snapshots(&before, &after);
@@ -416,7 +416,7 @@ mod tests {
     #[test]
     fn diff_no_changes_empty_deltas() {
         dusty_reactive::initialize_runtime();
-        let _sig = dusty_reactive::create_signal(0).unwrap();
+        let _sig = dusty_reactive::create_signal(0);
 
         let before = snapshot_runtime().unwrap();
         let after = snapshot_runtime().unwrap();
@@ -432,8 +432,8 @@ mod tests {
         dusty_reactive::initialize_runtime();
 
         let before = snapshot_runtime().unwrap();
-        let sig = dusty_reactive::create_signal(0).unwrap();
-        sig.set(1).unwrap();
+        let sig = dusty_reactive::create_signal(0);
+        sig.set(1);
         let after = snapshot_runtime().unwrap();
 
         let report = diff_snapshots(&before, &after);

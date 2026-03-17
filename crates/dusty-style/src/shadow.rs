@@ -53,7 +53,7 @@ impl BoxShadow {
         Self {
             offset_x,
             offset_y,
-            blur_radius,
+            blur_radius: blur_radius.max(0.0),
             spread_radius,
             color,
             inset,
@@ -116,6 +116,13 @@ mod tests {
     #[test]
     fn box_shadow_new_zero_blur() {
         let s = BoxShadow::new(2.0, 2.0, 0.0, 0.0, Color::BLACK, false);
+        assert_eq!(s.blur_radius, 0.0);
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn negative_blur_radius_clamped_to_zero() {
+        let s = BoxShadow::new(0.0, 4.0, -5.0, 0.0, Color::BLACK, false);
         assert_eq!(s.blur_radius, 0.0);
     }
 

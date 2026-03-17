@@ -106,7 +106,7 @@ pub struct InspectorTree {
 ///     let tree = inspect(&node, None).unwrap();
 ///     assert_eq!(tree.nodes.len(), 1);
 ///     assert!(matches!(tree.nodes[0].kind, InspectorNodeKind::Element { name: "Button" }));
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub fn inspect(root: &Node, layout: Option<&LayoutResult>) -> Result<InspectorTree> {
@@ -258,12 +258,13 @@ fn attr_value_to_string(val: &AttributeValue) -> String {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use dusty_core::event::{ClickEvent, HoverEvent};
     use dusty_core::{el, text, ComponentNode};
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
 
     fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -348,8 +349,8 @@ mod tests {
     fn event_handlers_listed() {
         with_scope(|cx| {
             let node = el("Button", cx)
-                .on_click(|_ctx, _e| {})
-                .on_hover(|_ctx, _e| {})
+                .on_click(|_e: &ClickEvent| {})
+                .on_hover(|_e: &HoverEvent| {})
                 .build_node();
             let tree = inspect(&node, None).unwrap();
             let handlers = &tree.nodes[0].event_handlers;

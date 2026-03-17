@@ -28,7 +28,7 @@ pub enum SliderSource {
 /// create_scope(|cx| {
 ///     let node = Slider::new().build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Slider {
@@ -150,15 +150,12 @@ impl View for Slider {
         };
 
         let signal = match self.source {
-            SliderSource::Uncontrolled(initial) => match create_signal(initial) {
-                Ok(s) => s,
-                Err(_) => return Node::Fragment(vec![]),
-            },
+            SliderSource::Uncontrolled(initial) => create_signal(initial),
             SliderSource::Controlled(sig) => sig,
         };
 
         let mut builder = el("Slider", cx)
-            .attr("value", signal.get().unwrap_or(0.0))
+            .attr("value", signal.get())
             .attr("min", self.min)
             .attr("max", self.max)
             .attr("disabled", self.disabled)
@@ -184,7 +181,7 @@ impl View for Slider {
                 if range <= 0.0 {
                     return;
                 }
-                let current = sig_drag.get().unwrap_or(min);
+                let current = sig_drag.get();
                 // delta_x as fraction of a notional 200px track width
                 let delta_frac = e.delta_x / 200.0;
                 let mut new_val = current + delta_frac * range;
@@ -192,7 +189,7 @@ impl View for Slider {
                     new_val = snap(new_val, min, s);
                 }
                 new_val = clamp(new_val, min, max);
-                let _ = sig_drag.set(new_val);
+                sig_drag.set(new_val);
                 if let Some(ref cb) = *on_change_drag {
                     cb(new_val);
                 }
@@ -211,7 +208,7 @@ impl View for Slider {
                     new_val = snap(new_val, min, s);
                 }
                 new_val = clamp(new_val, min, max);
-                let _ = sig_click.set(new_val);
+                sig_click.set(new_val);
                 if let Some(ref cb) = *on_change_click {
                     cb(new_val);
                 }
@@ -235,7 +232,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -332,7 +329,7 @@ mod tests {
     #[test]
     fn controlled_reads_signal() {
         with_scope(|cx| {
-            let sig = create_signal(42.0).unwrap();
+            let sig = create_signal(42.0);
             let node = Slider::new().controlled(sig).build(cx);
             let el = extract_element(&node);
             assert_eq!(el.attr("value"), Some(&AttributeValue::Float(42.0)));

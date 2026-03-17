@@ -36,7 +36,7 @@ pub use frame::Frame;
 ///         frame.rect(0.0, 0.0, 100.0, 50.0, Some(FillStyle::Solid(Color::WHITE)), None);
 ///     }).build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 type ClickHandler = Box<dyn Fn(&dusty_core::event::EventContext, &dusty_core::event::ClickEvent)>;
@@ -170,7 +170,7 @@ mod tests {
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
         let _guard = RuntimeGuard;
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
     }
 
     fn extract_element(node: &Node) -> &Element {
@@ -261,9 +261,9 @@ mod tests {
     #[test]
     fn draw_reads_signal() {
         with_scope(|cx| {
-            let count = create_signal(0i32).unwrap();
+            let count = create_signal(0i32);
             let node = Canvas::new(move |frame| {
-                let n = count.get().unwrap_or(0);
+                let n = count.get();
                 for _ in 0..n {
                     frame.rect(
                         0.0,
@@ -286,9 +286,9 @@ mod tests {
     #[test]
     fn redraws_on_signal_change() {
         with_scope(|cx| {
-            let count = create_signal(1i32).unwrap();
+            let count = create_signal(1i32);
             let node = Canvas::new(move |frame| {
-                let n = count.get().unwrap_or(0);
+                let n = count.get();
                 for _ in 0..n {
                     frame.rect(
                         0.0,
@@ -306,8 +306,8 @@ mod tests {
             // Initial: 1 rect
             assert_eq!(extract_commands(el).len(), 1);
 
-            // Update signal → effect re-runs
-            count.set(3).unwrap();
+            // Update signal -> effect re-runs
+            count.set(3);
             assert_eq!(extract_commands(el).len(), 3);
         });
     }
@@ -317,11 +317,11 @@ mod tests {
         with_scope(|cx| {
             let call_count = Rc::new(std::cell::Cell::new(0u32));
             let cc = call_count.clone();
-            let count = create_signal(1i32).unwrap();
+            let count = create_signal(1i32);
 
             let _node = Canvas::new(move |frame| {
                 cc.set(cc.get() + 1);
-                let n = count.get().unwrap_or(0);
+                let n = count.get();
                 for _ in 0..n {
                     frame.rect(
                         0.0,

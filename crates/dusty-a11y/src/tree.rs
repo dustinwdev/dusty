@@ -49,7 +49,7 @@ use crate::role::element_role;
 ///     let layout = compute_layout(&node, 400.0, 300.0, &Mock).unwrap();
 ///     let update = build_accessibility_tree(&node, &layout, None).unwrap();
 ///     assert!(!update.nodes.is_empty());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub fn build_accessibility_tree(
@@ -322,7 +322,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
         initialize_runtime();
-        create_scope(f).unwrap();
+        create_scope(f);
         dispose_runtime();
     }
 

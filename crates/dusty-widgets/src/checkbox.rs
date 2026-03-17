@@ -5,6 +5,8 @@ use dusty_core::view::View;
 use dusty_reactive::{create_signal, Scope, Signal};
 use dusty_style::Style;
 
+use crate::common::LabelContent;
+
 /// Source of truth for the checked state.
 pub enum CheckedSource {
     /// Widget manages its own signal internally.
@@ -26,7 +28,7 @@ pub enum CheckedSource {
 /// create_scope(|cx| {
 ///     let node = Checkbox::new().build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Checkbox {
@@ -35,11 +37,6 @@ pub struct Checkbox {
     disabled: bool,
     user_style: Option<Style>,
     on_change: Option<Box<dyn Fn(bool)>>,
-}
-
-enum LabelContent {
-    Static(String),
-    Dynamic(Box<dyn Fn() -> String>),
 }
 
 impl Checkbox {
@@ -122,15 +119,12 @@ impl View for Checkbox {
         };
 
         let signal = match self.source {
-            CheckedSource::Uncontrolled(initial) => match create_signal(initial) {
-                Ok(s) => s,
-                Err(_) => return Node::Fragment(vec![]),
-            },
+            CheckedSource::Uncontrolled(initial) => create_signal(initial),
             CheckedSource::Controlled(sig) => sig,
         };
 
         let mut builder = el("Checkbox", cx)
-            .attr("checked", signal.get().unwrap_or(false))
+            .attr("checked", signal.get())
             .attr("disabled", self.disabled)
             .style(merged)
             .data(signal);
@@ -147,9 +141,9 @@ impl View for Checkbox {
         if !self.disabled {
             let on_change = self.on_change;
             builder = builder.on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
-                let current = signal.get().unwrap_or(false);
+                let current = signal.get();
                 let new_val = !current;
-                let _ = signal.set(new_val);
+                signal.set(new_val);
                 if let Some(ref cb) = on_change {
                     cb(new_val);
                 }
@@ -168,26 +162,11 @@ impl View for Checkbox {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusty_core::{AttributeValue, Element};
-    use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime};
+    use crate::test_helpers::{extract_element, with_scope};
+    use dusty_core::AttributeValue;
+    use dusty_reactive::create_signal;
     use std::cell::Cell;
     use std::rc::Rc;
-
-    fn with_scope(f: impl FnOnce(Scope)) {
-        initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
-        dispose_runtime();
-    }
-
-    fn extract_element(node: &Node) -> &Element {
-        match node {
-            Node::Component(comp) => match &*comp.child {
-                Node::Element(el) => el,
-                _ => panic!("expected Element inside Component"),
-            },
-            _ => panic!("expected Component node"),
-        }
-    }
 
     #[test]
     fn builds_component() {
@@ -254,7 +233,7 @@ mod tests {
     #[test]
     fn controlled_reads_signal() {
         with_scope(|cx| {
-            let sig = create_signal(true).unwrap();
+            let sig = create_signal(true);
             let node = Checkbox::new().controlled(sig).build(cx);
             let el = extract_element(&node);
             assert_eq!(el.attr("checked"), Some(&AttributeValue::Bool(true)));

@@ -6,7 +6,7 @@ use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
 
 fn with_scope(f: impl FnOnce(Scope)) {
     initialize_runtime();
-    create_scope(|cx| f(cx)).unwrap();
+    create_scope(|cx| f(cx));
     dispose_runtime();
 }
 
@@ -26,29 +26,29 @@ fn assert_is_col(node: &Node) {
 #[test]
 fn counter_example_builds_valid_tree() {
     with_scope(|cx| {
-        let count = create_signal(0i32).unwrap();
+        let count = create_signal(0i32);
 
         let decrement = {
             let count = count;
             move |_ctx: &EventContext, _e: &ClickEvent| {
-                let _ = count.update(|n| *n -= 1);
+                count.update(|n| *n -= 1);
             }
         };
         let reset = {
             let count = count;
             move |_ctx: &EventContext, _e: &ClickEvent| {
-                let _ = count.set(0);
+                count.set(0);
             }
         };
         let increment = {
             let count = count;
             move |_ctx: &EventContext, _e: &ClickEvent| {
-                let _ = count.update(|n| *n += 1);
+                count.update(|n| *n += 1);
             }
         };
 
         let root = col![cx;
-            Text::dynamic(move || format!("Count: {}", count.get().unwrap_or(0))).build(cx),
+            Text::dynamic(move || format!("Count: {}", count.get())).build(cx),
             row![cx;
                 Button::new("-1").on_click(decrement).build(cx),
                 Button::new("Reset").variant(ButtonVariant::Secondary).on_click(reset).build(cx),
@@ -78,41 +78,33 @@ fn todo_example_builds_valid_tree() {
             completed: Signal<bool>,
         }
 
-        let todos = create_signal::<Vec<Todo>>(vec![]).unwrap();
-        let input_text = create_signal(String::new()).unwrap();
-        let next_id = create_signal(1u32).unwrap();
+        let todos = create_signal::<Vec<Todo>>(vec![]);
+        let input_text = create_signal(String::new());
+        let next_id = create_signal(1u32);
 
-        let active_count = create_memo(move || {
-            todos
-                .with(|ts| {
-                    ts.iter()
-                        .filter(|t| !t.completed.get().unwrap_or(false))
-                        .count()
-                })
-                .unwrap_or(0)
-        })
-        .unwrap();
+        let active_count =
+            create_memo(move || todos.with(|ts| ts.iter().filter(|t| !t.completed.get()).count()));
 
         let add = {
             let input_text = input_text;
             let todos = todos;
             let next_id = next_id;
             move |_text: &str| {
-                let title = input_text.get().unwrap_or_default();
+                let title = input_text.get();
                 if title.is_empty() {
                     return;
                 }
-                let id = next_id.get().unwrap_or(0);
-                let completed = create_signal(false).unwrap();
-                let _ = todos.update(|ts| {
+                let id = next_id.get();
+                let completed = create_signal(false);
+                todos.update(|ts| {
                     ts.push(Todo {
                         id,
                         title: title.clone(),
                         completed,
                     });
                 });
-                let _ = next_id.update(|n| *n += 1);
-                let _ = input_text.set(String::new());
+                next_id.update(|n| *n += 1);
+                input_text.set(String::new());
             }
         };
 
@@ -123,9 +115,9 @@ fn todo_example_builds_valid_tree() {
                 Button::new("Add").build(cx)
             ],
             Divider::horizontal().build(cx),
-            Show::new(move || todos.with(|ts| !ts.is_empty()).unwrap_or(false))
+            Show::new(move || todos.with(|ts| !ts.is_empty()))
                 .child(move || {
-                    For::<Todo, u32, Node>::new(move || todos.get().unwrap_or_default())
+                    For::<Todo, u32, Node>::new(move || todos.get())
                         .key(|t: &Todo| t.id)
                         .view(|t: Todo| Node::Text(text(t.title)))
                         .build(cx)
@@ -134,7 +126,7 @@ fn todo_example_builds_valid_tree() {
                 .build(cx),
             Divider::horizontal().build(cx),
             row![cx;
-                Text::dynamic(move || format!("{} active", active_count.get().unwrap_or(0))).build(cx),
+                Text::dynamic(move || format!("{} active", active_count.get())).build(cx),
                 Button::new("Clear completed").build(cx)
             ]
         ];
@@ -152,21 +144,20 @@ fn todo_example_builds_valid_tree() {
 #[test]
 fn form_example_builds_valid_tree() {
     with_scope(|cx| {
-        let name = create_signal(String::new()).unwrap();
-        let email = create_signal(String::new()).unwrap();
-        let experience = create_signal("beginner".to_string()).unwrap();
-        let notifications = create_signal(false).unwrap();
-        let satisfaction = create_signal(5.0).unwrap();
-        let accept_terms = create_signal(false).unwrap();
-        let submitted = create_signal(false).unwrap();
+        let name = create_signal(String::new());
+        let email = create_signal(String::new());
+        let experience = create_signal("beginner".to_string());
+        let notifications = create_signal(false);
+        let satisfaction = create_signal(5.0);
+        let accept_terms = create_signal(false);
+        let submitted = create_signal(false);
 
         let form_valid = create_memo(move || {
-            let n = name.with(|s| !s.is_empty()).unwrap_or(false);
-            let e = email.with(|s| s.contains('@')).unwrap_or(false);
-            let a = accept_terms.get().unwrap_or(false);
+            let n = name.with(|s| !s.is_empty());
+            let e = email.with(|s| s.contains('@'));
+            let a = accept_terms.get();
             n && e && a
-        })
-        .unwrap();
+        });
 
         // Group fields into sub-containers to stay within tuple arity limit
         let name_field = col![cx;
@@ -199,8 +190,8 @@ fn form_example_builds_valid_tree() {
             email_field,
             radio_group,
             controls,
-            Button::new("Submit").disabled(!form_valid.get().unwrap_or(false)).build(cx),
-            Show::new(move || submitted.get().unwrap_or(false))
+            Button::new("Submit").disabled(!form_valid.get()).build(cx),
+            Show::new(move || submitted.get())
                 .child(|| Node::Text(text("Form submitted successfully!")))
                 .build(cx)
         ];
@@ -218,9 +209,9 @@ fn form_example_builds_valid_tree() {
 #[test]
 fn theme_showcase_example_builds_valid_tree() {
     with_scope(|cx| {
-        let dark_mode = create_signal(false).unwrap();
+        let dark_mode = create_signal(false);
 
-        let _theme = if dark_mode.get().unwrap_or(false) {
+        let _theme = if dark_mode.get() {
             Theme::dark()
         } else {
             Theme::light()
@@ -292,11 +283,11 @@ fn dashboard_example_builds_valid_tree() {
             description: String,
         }
 
-        let refresh_trigger = create_signal(0u32).unwrap();
+        let refresh_trigger = create_signal(0u32);
 
         let stats_resource = create_resource(
-            move || refresh_trigger.get().unwrap_or(0),
-            |_trigger, resolver| {
+            move || refresh_trigger.get(),
+            |_trigger: u32, resolver: ResourceResolver<DashboardStats>| {
                 resolver.resolve(DashboardStats {
                     users: 1234,
                     revenue: 56789,
@@ -304,12 +295,11 @@ fn dashboard_example_builds_valid_tree() {
                     active: 42,
                 });
             },
-        )
-        .unwrap();
+        );
 
-        let activity_resource = create_resource(
-            move || refresh_trigger.get().unwrap_or(0),
-            |_trigger, resolver| {
+        let activity_resource: Resource<Vec<Activity>> = create_resource(
+            move || refresh_trigger.get(),
+            |_trigger: u32, resolver: ResourceResolver<Vec<Activity>>| {
                 resolver.resolve(vec![
                     Activity {
                         id: 1,
@@ -325,8 +315,7 @@ fn dashboard_example_builds_valid_tree() {
                     },
                 ]);
             },
-        )
-        .unwrap();
+        );
 
         let stat_card = |label: &str, value: &str| -> Node {
             col![cx;
@@ -335,7 +324,7 @@ fn dashboard_example_builds_valid_tree() {
             ]
         };
 
-        let stats = stats_resource.get().unwrap_or(None);
+        let stats = stats_resource.get();
         let (users, revenue, orders, active) = stats.map_or(
             (
                 "---".to_string(),
@@ -360,7 +349,7 @@ fn dashboard_example_builds_valid_tree() {
             row![cx;
                 Text::new("Dashboard").build(cx),
                 Button::new("Refresh").on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
-                    let _ = refresh_trigger.update(|n| *n += 1);
+                    refresh_trigger.update(|n| *n += 1);
                 }).build(cx)
             ],
             Divider::horizontal().build(cx),
@@ -370,9 +359,9 @@ fn dashboard_example_builds_valid_tree() {
                 stat_card("Orders", &orders),
                 stat_card("Active", &active)
             ],
-            Suspense::new(move || activity_for_ready.get().unwrap_or(None).is_some())
+            Suspense::new(move || activity_for_ready.get().is_some())
                 .child(move || {
-                    let activities = activity_for_child.get().unwrap_or(None).unwrap_or_default();
+                    let activities = activity_for_child.get().unwrap_or_default();
                     ScrollView::new()
                         .child(
                             For::<Activity, u32, Node>::new(move || activities.clone())

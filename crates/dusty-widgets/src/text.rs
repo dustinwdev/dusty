@@ -19,7 +19,7 @@ use dusty_style::Style;
 /// create_scope(|cx| {
 ///     let node = Text::new("Hello, world!").build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Text {
@@ -98,7 +98,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -129,8 +129,8 @@ mod tests {
     #[test]
     fn dynamic_reads_signal() {
         with_scope(|cx| {
-            let count = create_signal(42i32).unwrap();
-            let node = Text::dynamic(move || format!("{}", count.get().unwrap())).build(cx);
+            let count = create_signal(42i32);
+            let node = Text::dynamic(move || format!("{}", count.get())).build(cx);
             let el = extract_element(&node);
             assert_eq!(el.children().len(), 1);
             if let Node::Text(text_node) = &el.children()[0] {

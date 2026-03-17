@@ -9,6 +9,7 @@
 mod button;
 pub mod canvas;
 mod checkbox;
+mod common;
 mod divider;
 mod error;
 mod error_boundary;
@@ -22,6 +23,8 @@ mod show;
 mod slider;
 mod spacer;
 mod suspense;
+#[cfg(test)]
+mod test_helpers;
 mod text;
 pub mod text_input;
 mod toggle;

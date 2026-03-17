@@ -31,9 +31,9 @@ fn extract_commands(el: &Element) -> Vec<CanvasCommand> {
 fn canvas_with_signal_updates_commands() {
     initialize_runtime();
     create_scope(|cx| {
-        let radius = create_signal(10.0f32).unwrap();
+        let radius = create_signal(10.0f32);
         let node = Canvas::new(move |frame| {
-            let r = radius.get().unwrap_or(0.0);
+            let r = radius.get();
             frame.circle(50.0, 50.0, r, Some(FillStyle::Solid(Color::WHITE)), None);
         })
         .build(cx);
@@ -49,7 +49,7 @@ fn canvas_with_signal_updates_commands() {
         }
 
         // Update signal
-        radius.set(25.0).unwrap();
+        radius.set(25.0);
         let cmds = extract_commands(el);
         assert_eq!(cmds.len(), 1);
         if let CanvasCommand::Circle { radius: r, .. } = &cmds[0] {
@@ -57,8 +57,7 @@ fn canvas_with_signal_updates_commands() {
         } else {
             panic!("expected Circle command after update");
         }
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -70,7 +69,6 @@ fn canvas_empty_draw() {
         let el = extract_element(&node);
         let cmds = extract_commands(el);
         assert!(cmds.is_empty());
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

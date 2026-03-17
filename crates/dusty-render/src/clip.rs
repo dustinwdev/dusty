@@ -59,6 +59,11 @@ impl ClipStack {
             } else {
                 current.radii
             };
+            // Clamp radii so they don't exceed the intersected rect's half-dimensions
+            let half_w = rect.width / 2.0;
+            let half_h = rect.height / 2.0;
+            let max_r = half_w.min(half_h);
+            let radii = radii.map(|r| r.min(max_r));
             ClipRegion { rect, radii }
         });
         self.stack.push(effective);
@@ -304,6 +309,62 @@ mod tests {
 
         let current = stack.current().unwrap();
         assert_eq!(current.radii, [8.0; 4]);
+    }
+
+    #[test]
+    fn inherited_radii_clamped_to_intersected_rect() {
+        let mut stack = ClipStack::new();
+        // Parent: 200x200 with large radii
+        stack.push(ClipRegion {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 200.0,
+            },
+            radii: [80.0; 4],
+        });
+        // Child: 20x20, inherits parent radii (all zeros)
+        stack.push(ClipRegion {
+            rect: Rect {
+                x: 90.0,
+                y: 90.0,
+                width: 20.0,
+                height: 20.0,
+            },
+            radii: [0.0; 4],
+        });
+
+        let current = stack.current().unwrap();
+        // half_w = half_h = 10.0, so radii clamped to 10.0
+        assert_eq!(current.radii, [10.0; 4]);
+    }
+
+    #[test]
+    fn explicit_radii_clamped_to_intersected_rect() {
+        let mut stack = ClipStack::new();
+        stack.push(ClipRegion {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 200.0,
+            },
+            radii: [0.0; 4],
+        });
+        // 30x30 clip with radii of 25 — should clamp to 15.0
+        stack.push(ClipRegion {
+            rect: Rect {
+                x: 10.0,
+                y: 10.0,
+                width: 30.0,
+                height: 30.0,
+            },
+            radii: [25.0; 4],
+        });
+
+        let current = stack.current().unwrap();
+        assert_eq!(current.radii, [15.0; 4]);
     }
 
     #[test]

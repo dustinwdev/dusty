@@ -15,7 +15,7 @@ fn inner_node(node: &Node) -> &Node {
 fn drag_sequence_updates_value() {
     initialize_runtime();
     create_scope(|cx| {
-        let sig = create_signal(50.0).unwrap();
+        let sig = create_signal(50.0);
         let node = Slider::new().controlled(sig).build(cx);
         let inner = inner_node(&node);
 
@@ -38,10 +38,9 @@ fn drag_sequence_updates_value() {
         };
         dispatch_event(inner, &[], &drag_move).unwrap();
 
-        let val = sig.get().unwrap();
+        let val = sig.get();
         assert!((val - 60.0).abs() < 0.01, "expected ~60.0, got {val}");
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -49,7 +48,7 @@ fn drag_sequence_updates_value() {
 fn click_jumps_to_position() {
     initialize_runtime();
     create_scope(|cx| {
-        let sig = create_signal(0.0).unwrap();
+        let sig = create_signal(0.0);
         let node = Slider::new().controlled(sig).build(cx);
         let inner = inner_node(&node);
 
@@ -57,10 +56,9 @@ fn click_jumps_to_position() {
         let event = ClickEvent { x: 100.0, y: 0.0 };
         dispatch_event(inner, &[], &event).unwrap();
 
-        let val = sig.get().unwrap();
+        let val = sig.get();
         assert!((val - 50.0).abs() < 0.01, "expected ~50.0, got {val}");
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -68,7 +66,7 @@ fn click_jumps_to_position() {
 fn controlled_round_trip() {
     initialize_runtime();
     create_scope(|cx| {
-        let sig = create_signal(25.0).unwrap();
+        let sig = create_signal(25.0);
         let node = Slider::new().controlled(sig).build(cx);
         let inner = inner_node(&node);
 
@@ -76,9 +74,8 @@ fn controlled_round_trip() {
         let event = ClickEvent { x: 150.0, y: 0.0 };
         dispatch_event(inner, &[], &event).unwrap();
 
-        let val = sig.get().unwrap();
+        let val = sig.get();
         assert!((val - 75.0).abs() < 0.01, "expected ~75.0, got {val}");
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }

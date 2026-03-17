@@ -177,7 +177,7 @@ where
 ///
 /// run(WindowConfig::new("My App"), |_window, event| {
 ///     matches!(event, AppEvent::Platform(PlatformEvent::CloseRequested))
-/// }).unwrap();
+/// });
 /// ```
 pub fn run(
     config: WindowConfig,

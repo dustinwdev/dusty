@@ -5,7 +5,7 @@ use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime, Scope};
 
 fn with_scope(f: impl FnOnce(Scope)) {
     initialize_runtime();
-    create_scope(|cx| f(cx)).unwrap();
+    create_scope(|cx| f(cx));
     dispose_runtime();
 }
 

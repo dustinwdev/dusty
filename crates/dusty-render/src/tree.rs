@@ -392,9 +392,14 @@ impl WalkContext<'_> {
         };
         let Ok(text_layout) = TextLayout::new(self.text_system, &text, inherited_font, max_width)
         else {
-            debug_assert!(false, "FontSystem borrow conflict during text layout");
+            eprintln!("dusty: FontSystem borrow conflict during text layout");
             return;
         };
+
+        let (tw, th) = text_layout.size();
+        if tw == 0.0 && th == 0.0 {
+            eprintln!("dusty: text measurement returned (0, 0) for non-empty text, font system may be unavailable");
+        }
 
         let clip_rect = self.encoder.clip_stack().current().map(|c| c.rect);
         let fg_color = [
@@ -406,10 +411,7 @@ impl WalkContext<'_> {
 
         let mut glyphs = Vec::new();
         let Ok(mut font_system) = self.text_system.font_system_mut() else {
-            debug_assert!(
-                false,
-                "FontSystem borrow conflict during glyph rasterization"
-            );
+            eprintln!("dusty: FontSystem borrow conflict during glyph rasterization");
             return;
         };
 
@@ -550,7 +552,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
         initialize_runtime();
-        create_scope(f).unwrap();
+        create_scope(f);
         dispose_runtime();
     }
 

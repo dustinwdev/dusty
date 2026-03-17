@@ -36,7 +36,7 @@ impl TextMeasure for MockTextMeasure {
 
 fn with_scope(f: impl FnOnce(Scope)) {
     initialize_runtime();
-    create_scope(f).unwrap();
+    create_scope(f);
     dispose_runtime();
 }
 

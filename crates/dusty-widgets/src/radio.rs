@@ -5,6 +5,8 @@ use dusty_core::view::View;
 use dusty_reactive::{Scope, Signal};
 use dusty_style::Style;
 
+use crate::common::LabelContent;
+
 /// A radio button widget.
 ///
 /// Multiple `Radio` widgets share a `Signal<V>` to form a group. Selecting
@@ -19,10 +21,10 @@ use dusty_style::Style;
 ///
 /// initialize_runtime();
 /// create_scope(|cx| {
-///     let choice = create_signal("a".to_string()).unwrap();
+///     let choice = create_signal("a".to_string());
 ///     let node = Radio::new("a".to_string(), choice).build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 #[allow(clippy::type_complexity)]
@@ -33,11 +35,6 @@ pub struct Radio<V: PartialEq + Clone + 'static> {
     disabled: bool,
     user_style: Option<Style>,
     on_select: Option<Box<dyn Fn(&V)>>,
-}
-
-enum LabelContent {
-    Static(String),
-    Dynamic(Box<dyn Fn() -> String>),
 }
 
 impl<V: PartialEq + Clone + 'static> Radio<V> {
@@ -100,7 +97,7 @@ impl<V: PartialEq + Clone + 'static> View for Radio<V> {
             base
         };
 
-        let is_checked = self.group.with(|g| *g == self.value).unwrap_or(false);
+        let is_checked = self.group.with(|g| *g == self.value);
 
         let mut builder = el("Radio", cx)
             .attr("checked", is_checked)
@@ -122,7 +119,7 @@ impl<V: PartialEq + Clone + 'static> View for Radio<V> {
             let group = self.group;
             let on_select = self.on_select;
             builder = builder.on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
-                let _ = group.set(value.clone());
+                group.set(value.clone());
                 if let Some(ref cb) = on_select {
                     cb(&value);
                 }
@@ -141,29 +138,14 @@ impl<V: PartialEq + Clone + 'static> View for Radio<V> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusty_core::{AttributeValue, Element};
-    use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime};
-
-    fn with_scope(f: impl FnOnce(Scope)) {
-        initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
-        dispose_runtime();
-    }
-
-    fn extract_element(node: &Node) -> &Element {
-        match node {
-            Node::Component(comp) => match &*comp.child {
-                Node::Element(el) => el,
-                _ => panic!("expected Element inside Component"),
-            },
-            _ => panic!("expected Component node"),
-        }
-    }
+    use crate::test_helpers::{extract_element, with_scope};
+    use dusty_core::AttributeValue;
+    use dusty_reactive::create_signal;
 
     #[test]
     fn builds_component() {
         with_scope(|cx| {
-            let group = create_signal("a".to_string()).unwrap();
+            let group = create_signal("a".to_string());
             let node = Radio::new("a".to_string(), group).build(cx);
             assert!(node.is_component());
             if let Node::Component(comp) = &node {
@@ -175,7 +157,7 @@ mod tests {
     #[test]
     fn unchecked_when_group_differs() {
         with_scope(|cx| {
-            let group = create_signal("b".to_string()).unwrap();
+            let group = create_signal("b".to_string());
             let node = Radio::new("a".to_string(), group).build(cx);
             let el = extract_element(&node);
             assert_eq!(el.attr("checked"), Some(&AttributeValue::Bool(false)));
@@ -185,7 +167,7 @@ mod tests {
     #[test]
     fn checked_when_group_matches() {
         with_scope(|cx| {
-            let group = create_signal("a".to_string()).unwrap();
+            let group = create_signal("a".to_string());
             let node = Radio::new("a".to_string(), group).build(cx);
             let el = extract_element(&node);
             assert_eq!(el.attr("checked"), Some(&AttributeValue::Bool(true)));
@@ -195,7 +177,7 @@ mod tests {
     #[test]
     fn disabled_suppresses_click() {
         with_scope(|cx| {
-            let group = create_signal("a".to_string()).unwrap();
+            let group = create_signal("a".to_string());
             let node = Radio::new("b".to_string(), group).disabled(true).build(cx);
             let el = extract_element(&node);
             assert!(!el.event_handlers().iter().any(|h| h.name() == "click"));
@@ -205,7 +187,7 @@ mod tests {
     #[test]
     fn label_text() {
         with_scope(|cx| {
-            let group = create_signal(0i32).unwrap();
+            let group = create_signal(0i32);
             let node = Radio::new(1, group).label("Option A").build(cx);
             let el = extract_element(&node);
             assert_eq!(el.children().len(), 1);
@@ -220,7 +202,7 @@ mod tests {
     #[test]
     fn style_merges() {
         with_scope(|cx| {
-            let group = create_signal(0i32).unwrap();
+            let group = create_signal(0i32);
             let node = Radio::new(1, group)
                 .style(Style {
                     width: Some(20.0),
@@ -236,7 +218,7 @@ mod tests {
     #[test]
     fn label_sets_label_attr() {
         with_scope(|cx| {
-            let group = create_signal(0i32).unwrap();
+            let group = create_signal(0i32);
             let node = Radio::new(1, group).label("Option A").build(cx);
             let el = extract_element(&node);
             assert_eq!(
@@ -249,7 +231,7 @@ mod tests {
     #[test]
     fn click_handler_registered_when_enabled() {
         with_scope(|cx| {
-            let group = create_signal(0i32).unwrap();
+            let group = create_signal(0i32);
             let node = Radio::new(1, group).build(cx);
             let el = extract_element(&node);
             assert!(el.event_handlers().iter().any(|h| h.name() == "click"));

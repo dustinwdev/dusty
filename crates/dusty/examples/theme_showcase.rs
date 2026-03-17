@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-//! Theme showcase — palette colors, light/dark theme, design tokens, button variants.
+//! Theme showcase -- palette colors, light/dark theme, design tokens, button variants.
 
 use dusty::prelude::*;
 use dusty::style::tokens::{spacing, RadiusToken, ShadowToken};
@@ -10,14 +10,14 @@ fn main() {
         .width(800.0)
         .height(700.0)
         .root(|cx| {
-            let dark_mode = create_signal(false).unwrap();
+            let dark_mode = create_signal(false);
 
-            let theme = if dark_mode.get().unwrap() {
+            let theme = if dark_mode.get() {
                 Theme::dark()
             } else {
                 Theme::light()
             };
-            provide_theme(theme).unwrap();
+            provide_theme(theme);
 
             // Helper: color swatch
             let swatch = |color: Color| -> Node {
@@ -100,7 +100,7 @@ fn main() {
                 radius_box(RadiusToken::Full)
             ];
 
-            // Shadow tokens — show count of layers as text
+            // Shadow tokens -- show count of layers as text
             let shadow_info = row![cx;
                 Text::new(format!("Sm: {} layer", ShadowToken::Sm.to_shadows().len())).build(cx),
                 Text::new(format!("Md: {} layers", ShadowToken::Md.to_shadows().len())).build(cx),
@@ -109,7 +109,7 @@ fn main() {
             ];
 
             // Semantic colors from theme
-            let theme = use_theme().unwrap();
+            let theme = use_theme();
             let semantic_row = row![cx;
                 swatch(theme.primary.get(500).unwrap()),
                 swatch(theme.danger.get(500).unwrap()),

@@ -18,4 +18,4 @@ mod tree;
 pub use error::{LayoutError, Result};
 pub use measure::TextMeasure;
 pub use result::{LayoutNodeId, LayoutResult, Rect};
-pub use tree::compute_layout;
+pub use tree::{compute_layout, LayoutEngine};

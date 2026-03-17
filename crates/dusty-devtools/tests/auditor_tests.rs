@@ -2,13 +2,14 @@
 
 #![allow(clippy::unwrap_used)]
 
+use dusty_core::event::ClickEvent;
 use dusty_core::{el, text, Node};
 use dusty_devtools::auditor::{audit, AuditRule, Severity};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
 
 fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
     initialize_runtime();
-    create_scope(|cx| f(cx)).unwrap();
+    create_scope(|cx| f(cx));
     dispose_runtime();
 }
 
@@ -199,7 +200,9 @@ fn slider_with_value_no_value_issue() {
 #[test]
 fn interactive_generic_container_is_warning() {
     with_scope(|cx| {
-        let node = el("CustomWidget", cx).on_click(|_ctx, _e| {}).build_node();
+        let node = el("CustomWidget", cx)
+            .on_click(|_e: &ClickEvent| {})
+            .build_node();
         let result = audit(&node);
         let issue = result
             .issues
@@ -227,7 +230,7 @@ fn known_interactive_element_no_role_issue() {
     with_scope(|cx| {
         let node = el("Button", cx)
             .attr("label", "OK")
-            .on_click(|_ctx, _e| {})
+            .on_click(|_e: &ClickEvent| {})
             .build_node();
         let result = audit(&node);
         // Button maps to Role::Button, not GenericContainer

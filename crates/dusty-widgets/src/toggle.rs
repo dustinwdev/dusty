@@ -5,6 +5,8 @@ use dusty_core::view::View;
 use dusty_reactive::{create_signal, Scope, Signal};
 use dusty_style::{Corners, Style};
 
+use crate::common::LabelContent;
+
 /// Source of truth for the toggle state.
 pub enum ToggleSource {
     /// Widget manages its own signal internally.
@@ -26,7 +28,7 @@ pub enum ToggleSource {
 /// create_scope(|cx| {
 ///     let node = Toggle::new().build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Toggle {
@@ -35,11 +37,6 @@ pub struct Toggle {
     disabled: bool,
     user_style: Option<Style>,
     on_change: Option<Box<dyn Fn(bool)>>,
-}
-
-enum LabelContent {
-    Static(String),
-    Dynamic(Box<dyn Fn() -> String>),
 }
 
 impl Toggle {
@@ -125,15 +122,12 @@ impl View for Toggle {
         };
 
         let signal = match self.source {
-            ToggleSource::Uncontrolled(initial) => match create_signal(initial) {
-                Ok(s) => s,
-                Err(_) => return Node::Fragment(vec![]),
-            },
+            ToggleSource::Uncontrolled(initial) => create_signal(initial),
             ToggleSource::Controlled(sig) => sig,
         };
 
         let mut builder = el("Toggle", cx)
-            .attr("on", signal.get().unwrap_or(false))
+            .attr("on", signal.get())
             .attr("disabled", self.disabled)
             .style(merged)
             .data(signal);
@@ -150,9 +144,9 @@ impl View for Toggle {
         if !self.disabled {
             let on_change = self.on_change;
             builder = builder.on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
-                let current = signal.get().unwrap_or(false);
+                let current = signal.get();
                 let new_val = !current;
-                let _ = signal.set(new_val);
+                signal.set(new_val);
                 if let Some(ref cb) = on_change {
                     cb(new_val);
                 }
@@ -171,24 +165,9 @@ impl View for Toggle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusty_core::{AttributeValue, Element};
-    use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime};
-
-    fn with_scope(f: impl FnOnce(Scope)) {
-        initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
-        dispose_runtime();
-    }
-
-    fn extract_element(node: &Node) -> &Element {
-        match node {
-            Node::Component(comp) => match &*comp.child {
-                Node::Element(el) => el,
-                _ => panic!("expected Element inside Component"),
-            },
-            _ => panic!("expected Component node"),
-        }
-    }
+    use crate::test_helpers::{extract_element, with_scope};
+    use dusty_core::AttributeValue;
+    use dusty_reactive::create_signal;
 
     #[test]
     fn builds_component() {
@@ -240,7 +219,7 @@ mod tests {
     #[test]
     fn controlled_reads_signal() {
         with_scope(|cx| {
-            let sig = create_signal(true).unwrap();
+            let sig = create_signal(true);
             let node = Toggle::new().controlled(sig).build(cx);
             let el = extract_element(&node);
             assert_eq!(el.attr("on"), Some(&AttributeValue::Bool(true)));

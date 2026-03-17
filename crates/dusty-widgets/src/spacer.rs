@@ -19,7 +19,7 @@ use dusty_style::Style;
 /// create_scope(|cx| {
 ///     let node = Spacer::new().build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Spacer {
@@ -78,7 +78,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 

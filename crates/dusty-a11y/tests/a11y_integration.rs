@@ -38,7 +38,7 @@ impl TextMeasure for MockMeasure {
 
 fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
     initialize_runtime();
-    create_scope(f).unwrap();
+    create_scope(f);
     dispose_runtime();
 }
 

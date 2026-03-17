@@ -6,7 +6,7 @@
 
 // Reactive types
 pub use dusty_reactive::{
-    Effect, Memo, ReadSignal, Resource, ResourceState, Scope, Signal, WriteSignal,
+    Effect, Memo, ReadSignal, Resource, ResourceResolver, ResourceState, Scope, Signal, WriteSignal,
 };
 
 // Reactive functions
@@ -15,10 +15,17 @@ pub use dusty_reactive::{
     create_signal, create_signal_split, on_cleanup, provide_context, untrack, use_context,
 };
 
+// Fallible reactive functions (try_* variants)
+pub use dusty_reactive::{
+    try_batch, try_create_child_scope, try_create_effect, try_create_memo, try_create_resource,
+    try_create_scope, try_create_signal, try_create_signal_split, try_dispose_scope,
+    try_provide_context, try_use_context,
+};
+
 // Core types
 pub use dusty_core::{
-    AttributeValue, ComponentNode, DynamicNode, Element, ElementBuilder, EventHandler, Node,
-    TextContent, TextNode,
+    AttributeValue, ComponentNode, DynamicNode, Element, ElementBuilder, EventHandler,
+    IntoEventHandler, Node, TextContent, TextNode,
 };
 
 // Core functions

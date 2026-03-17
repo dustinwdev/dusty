@@ -24,7 +24,7 @@ use dusty_reactive::Scope;
 ///         .fallback(|| Node::Text(text("Loading...")))
 ///         .build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Suspense {
@@ -96,7 +96,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -145,21 +145,21 @@ mod tests {
     #[test]
     fn reactive_ready_switches() {
         with_scope(|cx| {
-            let ready = create_signal(false).unwrap();
-            let node = Suspense::new(move || ready.get().unwrap_or(false))
+            let ready = create_signal(false);
+            let node = Suspense::new(move || ready.get())
                 .child(|| Node::Text(text("Content")))
                 .fallback(|| Node::Text(text("Loading...")))
                 .build(cx);
 
-            // Initially not ready — should show fallback
+            // Initially not ready -- should show fallback
             let resolved = resolve_dynamic(&node);
             assert!(resolved.is_text());
             if let Node::Text(t) = &resolved {
                 assert_eq!(t.current_text(), "Loading...");
             }
 
-            // Set ready — should now show child
-            ready.set(true).unwrap();
+            // Set ready -- should now show child
+            ready.set(true);
             let resolved = resolve_dynamic(&node);
             assert!(resolved.is_text());
             if let Node::Text(t) = &resolved {

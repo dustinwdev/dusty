@@ -26,7 +26,7 @@ fn inner_node(node: &Node) -> &Node {
 fn selecting_one_deselects_other() {
     initialize_runtime();
     create_scope(|cx| {
-        let group = create_signal("a".to_string()).unwrap();
+        let group = create_signal("a".to_string());
 
         // Build two radios sharing the same group signal.
         // Radio A starts selected, Radio B starts unselected.
@@ -45,9 +45,8 @@ fn selecting_one_deselects_other() {
         dispatch_event(inner_b, &[], &event).unwrap();
 
         // Group signal should now be "b"
-        assert_eq!(group.get().unwrap(), "b");
-    })
-    .unwrap();
+        assert_eq!(group.get(), "b");
+    });
     dispose_runtime();
 }
 
@@ -55,7 +54,7 @@ fn selecting_one_deselects_other() {
 fn on_select_fires() {
     initialize_runtime();
     create_scope(|cx| {
-        let group = create_signal(0i32).unwrap();
+        let group = create_signal(0i32);
         let selected = std::rc::Rc::new(std::cell::Cell::new(0i32));
         let selected_clone = selected.clone();
 
@@ -70,8 +69,7 @@ fn on_select_fires() {
         dispatch_event(inner, &[], &event).unwrap();
 
         assert_eq!(selected.get(), 42);
-        assert_eq!(group.get().unwrap(), 42);
-    })
-    .unwrap();
+        assert_eq!(group.get(), 42);
+    });
     dispose_runtime();
 }

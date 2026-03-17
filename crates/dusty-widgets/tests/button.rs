@@ -19,19 +19,18 @@ fn extract_element(node: &Node) -> &Element {
 fn button_with_signal_label() {
     initialize_runtime();
     create_scope(|cx| {
-        let label = create_signal("Save".to_string()).unwrap();
-        let node = Button::dynamic(move || label.get().unwrap()).build(cx);
+        let label = create_signal("Save".to_string());
+        let node = Button::dynamic(move || label.get()).build(cx);
         let el = extract_element(&node);
 
         if let Node::Text(text_node) = &el.children()[0] {
             assert_eq!(text_node.current_text(), "Save");
-            label.set("Saving...".to_string()).unwrap();
+            label.set("Saving...".to_string());
             assert_eq!(text_node.current_text(), "Saving...");
         } else {
             panic!("expected Text child");
         }
-    })
-    .unwrap();
+    });
     dispose_runtime();
 }
 
@@ -39,26 +38,25 @@ fn button_with_signal_label() {
 fn click_updates_signal() {
     initialize_runtime();
     create_scope(|cx| {
-        let count = create_signal(0i32).unwrap();
+        let count = create_signal(0i32);
         let node = Button::new("Inc")
-            .on_click(move |_ctx, _e| {
-                let current = count.get().unwrap();
-                count.set(current + 1).unwrap();
+            .on_click(move |_e: &ClickEvent| {
+                let current = count.get();
+                count.set(current + 1);
             })
             .build(cx);
 
-        // Dispatch click event through the component → element
+        // Dispatch click event through the component -> element
         let inner = match &node {
             Node::Component(comp) => &*comp.child,
             _ => panic!("expected Component node"),
         };
         let event = ClickEvent { x: 0.0, y: 0.0 };
         dispatch_event(inner, &[], &event).unwrap();
-        assert_eq!(count.get().unwrap(), 1);
+        assert_eq!(count.get(), 1);
 
         dispatch_event(inner, &[], &event).unwrap();
-        assert_eq!(count.get().unwrap(), 2);
-    })
-    .unwrap();
+        assert_eq!(count.get(), 2);
+    });
     dispose_runtime();
 }

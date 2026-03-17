@@ -1,9 +1,12 @@
 use dusty_core::el;
+use dusty_core::element::IntoEventHandler;
 use dusty_core::event::{ClickEvent, EventContext};
 use dusty_core::node::{text, text_dynamic, ComponentNode, Node, TextNode};
 use dusty_core::view::View;
 use dusty_reactive::Scope;
 use dusty_style::{Corners, Edges, Style};
+
+use crate::common::LabelContent;
 
 type ClickHandler = Box<dyn Fn(&EventContext, &ClickEvent)>;
 
@@ -36,20 +39,15 @@ pub enum ButtonVariant {
 /// create_scope(|cx| {
 ///     let node = Button::new("Click me").build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct Button {
-    label: TextContent,
+    label: LabelContent,
     variant: ButtonVariant,
     disabled: bool,
     user_style: Option<Style>,
     on_click: Option<ClickHandler>,
-}
-
-enum TextContent {
-    Static(String),
-    Dynamic(Box<dyn Fn() -> String>),
 }
 
 impl Button {
@@ -57,7 +55,7 @@ impl Button {
     #[must_use]
     pub fn new(label: impl Into<String>) -> Self {
         Self {
-            label: TextContent::Static(label.into()),
+            label: LabelContent::Static(label.into()),
             variant: ButtonVariant::default(),
             disabled: false,
             user_style: None,
@@ -69,7 +67,7 @@ impl Button {
     #[must_use]
     pub fn dynamic(f: impl Fn() -> String + 'static) -> Self {
         Self {
-            label: TextContent::Dynamic(Box::new(f)),
+            label: LabelContent::Dynamic(Box::new(f)),
             variant: ButtonVariant::default(),
             disabled: false,
             user_style: None,
@@ -99,9 +97,11 @@ impl Button {
     }
 
     /// Registers a click event handler.
+    ///
+    /// Accepts either `|e| { ... }` or `|ctx, e| { ... }`.
     #[must_use]
-    pub fn on_click(mut self, handler: impl Fn(&EventContext, &ClickEvent) + 'static) -> Self {
-        self.on_click = Some(Box::new(handler));
+    pub fn on_click<M>(mut self, handler: impl IntoEventHandler<ClickEvent, M>) -> Self {
+        self.on_click = Some(handler.into_handler());
         self
     }
 }
@@ -138,8 +138,8 @@ impl View for Button {
         };
 
         let text_child: TextNode = match self.label {
-            TextContent::Static(s) => text(s),
-            TextContent::Dynamic(f) => text_dynamic(f),
+            LabelContent::Static(s) => text(s),
+            LabelContent::Dynamic(f) => text_dynamic(f),
         };
 
         let label_str = text_child.current_text().into_owned();
@@ -169,36 +169,11 @@ impl View for Button {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::{extract_element, with_scope};
     use dusty_core::node::TextContent as NodeTextContent;
-    use dusty_core::{AttributeValue, Element};
-    use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime};
+    use dusty_core::AttributeValue;
+    use dusty_reactive::create_signal;
     use dusty_style::Edges;
-
-    /// Drop guard that ensures `dispose_runtime()` runs even if a test panics.
-    /// This prevents runtime state from leaking into subsequent tests.
-    struct RuntimeGuard;
-
-    impl Drop for RuntimeGuard {
-        fn drop(&mut self) {
-            dispose_runtime();
-        }
-    }
-
-    fn with_scope(f: impl FnOnce(Scope)) {
-        initialize_runtime();
-        let _guard = RuntimeGuard;
-        create_scope(|cx| f(cx)).unwrap();
-    }
-
-    fn extract_element(node: &Node) -> &Element {
-        match node {
-            Node::Component(comp) => match &*comp.child {
-                Node::Element(el) => el,
-                _ => panic!("expected Element inside Component"),
-            },
-            _ => panic!("expected Component node"),
-        }
-    }
 
     #[test]
     fn builds_component() {
@@ -228,9 +203,8 @@ mod tests {
     #[test]
     fn dynamic_label() {
         with_scope(|cx| {
-            let count = create_signal(0i32).unwrap();
-            let node =
-                Button::dynamic(move || format!("Count: {}", count.get().unwrap())).build(cx);
+            let count = create_signal(0i32);
+            let node = Button::dynamic(move || format!("Count: {}", count.get())).build(cx);
             let el = extract_element(&node);
             if let Node::Text(text_node) = &el.children()[0] {
                 assert_eq!(text_node.current_text(), "Count: 0");
@@ -270,7 +244,7 @@ mod tests {
     #[test]
     fn click_registers_handler() {
         with_scope(|cx| {
-            let node = Button::new("Go").on_click(|_ctx, _e| {}).build(cx);
+            let node = Button::new("Go").on_click(|_e: &ClickEvent| {}).build(cx);
             let el = extract_element(&node);
             assert!(el.event_handlers().iter().any(|h| h.name() == "click"));
         });
@@ -281,7 +255,7 @@ mod tests {
         with_scope(|cx| {
             let node = Button::new("No")
                 .disabled(true)
-                .on_click(|_ctx, _e| {})
+                .on_click(|_e: &ClickEvent| {})
                 .build(cx);
             let el = extract_element(&node);
             assert!(!el.event_handlers().iter().any(|h| h.name() == "click"));

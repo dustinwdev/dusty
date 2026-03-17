@@ -31,7 +31,7 @@ use dusty_reactive::Scope;
 ///         .arm("b", || Node::Text(text("Beta")))
 ///         .build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct MatchView<K: PartialEq + 'static> {
@@ -104,7 +104,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -168,8 +168,8 @@ mod tests {
     #[test]
     fn reactive_value_switches_arms() {
         with_scope(|cx| {
-            let sig = create_signal(1i32).unwrap();
-            let node = MatchView::new(move || sig.get().unwrap())
+            let sig = create_signal(1i32);
+            let node = MatchView::new(move || sig.get())
                 .arm(1, || Node::Text(text("One")))
                 .arm(2, || Node::Text(text("Two")))
                 .build(cx);
@@ -183,7 +183,7 @@ mod tests {
             }
 
             // Switch signal to 2
-            sig.set(2).unwrap();
+            sig.set(2);
 
             let resolved = resolve_dynamic(&node);
             if let Node::Text(t) = resolved {

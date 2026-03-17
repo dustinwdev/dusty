@@ -44,7 +44,7 @@ type SubmitHandler = Box<dyn Fn(&str)>;
 /// create_scope(|cx| {
 ///     let node = TextInput::new().build(cx);
 ///     assert!(node.is_component());
-/// }).unwrap();
+/// });
 /// dispose_runtime();
 /// ```
 pub struct TextInput {
@@ -188,16 +188,6 @@ fn delete_selection(s: &mut String, cursor: usize, sel_start: usize) -> usize {
     start
 }
 
-/// Create a signal, returning a fallback node on error.
-macro_rules! try_signal {
-    ($val:expr) => {
-        match create_signal($val) {
-            Ok(s) => s,
-            Err(_) => return Node::Fragment(vec![]),
-        }
-    };
-}
-
 impl View for TextInput {
     #[allow(clippy::too_many_lines)]
     fn build(self, cx: Scope) -> Node {
@@ -210,21 +200,18 @@ impl View for TextInput {
         };
 
         let value_signal = match self.source {
-            InputSource::Uncontrolled(initial) => try_signal!(initial),
+            InputSource::Uncontrolled(initial) => create_signal(initial),
             InputSource::Controlled(sig) => sig,
         };
 
-        let initial_len = value_signal.with(String::len).unwrap_or(0);
-        let cursor_signal = try_signal!(initial_len);
-        let selection_signal: Signal<Option<usize>> = try_signal!(None);
-        let focused_signal = try_signal!(false);
+        let initial_len = value_signal.with(String::len);
+        let cursor_signal = create_signal(initial_len);
+        let selection_signal: Signal<Option<usize>> = create_signal(None);
+        let focused_signal = create_signal(false);
 
         let mut builder = el("TextInput", cx)
-            .attr("value", value_signal.with(Clone::clone).unwrap_or_default())
-            .attr(
-                "cursor",
-                i64::try_from(cursor_signal.get().unwrap_or(0)).unwrap_or(0),
-            )
+            .attr("value", value_signal.with(Clone::clone))
+            .attr("cursor", i64::try_from(cursor_signal.get()).unwrap_or(0))
             .attr("disabled", self.disabled)
             .attr("read_only", self.read_only)
             .attr("focused", false)
@@ -263,14 +250,14 @@ impl View for TextInput {
         // Focus / Blur
         let focused_for_focus = focused_signal;
         builder = builder.on_focus(move |_ctx: &EventContext, _e: &FocusEvent| {
-            let _ = focused_for_focus.set(true);
+            focused_for_focus.set(true);
         });
 
         let focused_for_blur = focused_signal;
         let sel_for_blur = selection_signal;
         builder = builder.on_blur(move |_ctx: &EventContext, _e: &BlurEvent| {
-            let _ = focused_for_blur.set(false);
-            let _ = sel_for_blur.set(None);
+            focused_for_blur.set(false);
+            sel_for_blur.set(None);
         });
 
         // Click — position cursor
@@ -278,16 +265,16 @@ impl View for TextInput {
         let val_for_click = value_signal;
         let sel_for_click = selection_signal;
         builder = builder.on_click(move |_ctx: &EventContext, e: &ClickEvent| {
-            let len = val_for_click.with(String::len).unwrap_or(0);
+            let len = val_for_click.with(String::len);
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let pos = (e.x.max(0.0) as usize).min(len);
-            let text = val_for_click.with(Clone::clone).unwrap_or_default();
+            let text = val_for_click.with(Clone::clone);
             let mut safe_pos = pos;
             while safe_pos > 0 && !text.is_char_boundary(safe_pos) {
                 safe_pos -= 1;
             }
-            let _ = cursor_for_click.set(safe_pos);
-            let _ = sel_for_click.set(None);
+            cursor_for_click.set(safe_pos);
+            sel_for_click.set(None);
         });
 
         let read_only = self.read_only;
@@ -306,15 +293,15 @@ impl View for TextInput {
             }
 
             // Read cursor and selection BEFORE mutating value
-            let mut cursor = cursor_for_input.get().unwrap_or(0);
-            let sel = sel_for_input.get().unwrap_or(None);
+            let mut cursor = cursor_for_input.get();
+            let sel = sel_for_input.get();
 
-            let mut new_text = val_for_input.with(Clone::clone).unwrap_or_default();
+            let mut new_text = val_for_input.with(Clone::clone);
 
             // If there's a selection, delete it first
             if let Some(sel_start) = sel {
                 cursor = delete_selection(&mut new_text, cursor, sel_start);
-                let _ = sel_for_input.set(None);
+                sel_for_input.set(None);
             }
 
             // Enforce max_length
@@ -329,8 +316,8 @@ impl View for TextInput {
             new_text.insert_str(cursor, &e.text);
             cursor += e.text.len();
 
-            let _ = val_for_input.set(new_text.clone());
-            let _ = cursor_for_input.set(cursor);
+            val_for_input.set(new_text.clone());
+            cursor_for_input.set(cursor);
 
             if let Some(ref cb) = *on_change_for_input {
                 cb(&new_text);
@@ -347,9 +334,9 @@ impl View for TextInput {
             let key_name = e.key.0.as_str();
 
             // Read all state upfront (before any signal writes)
-            let text_val = val_for_key.with(Clone::clone).unwrap_or_default();
-            let cursor = cursor_for_key.get().unwrap_or(0);
-            let sel = sel_for_key.get().unwrap_or(None);
+            let text_val = val_for_key.with(Clone::clone);
+            let cursor = cursor_for_key.get();
+            let sel = sel_for_key.get();
 
             match key_name {
                 "Enter" => {
@@ -361,43 +348,43 @@ impl View for TextInput {
                     let new_cursor = prev_char_boundary(&text_val, cursor);
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            let _ = sel_for_key.set(Some(cursor));
+                            sel_for_key.set(Some(cursor));
                         }
                     } else {
-                        let _ = sel_for_key.set(None);
+                        sel_for_key.set(None);
                     }
-                    let _ = cursor_for_key.set(new_cursor);
+                    cursor_for_key.set(new_cursor);
                 }
                 "ArrowRight" => {
                     let new_cursor = next_char_boundary(&text_val, cursor);
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            let _ = sel_for_key.set(Some(cursor));
+                            sel_for_key.set(Some(cursor));
                         }
                     } else {
-                        let _ = sel_for_key.set(None);
+                        sel_for_key.set(None);
                     }
-                    let _ = cursor_for_key.set(new_cursor);
+                    cursor_for_key.set(new_cursor);
                 }
                 "Home" => {
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            let _ = sel_for_key.set(Some(cursor));
+                            sel_for_key.set(Some(cursor));
                         }
                     } else {
-                        let _ = sel_for_key.set(None);
+                        sel_for_key.set(None);
                     }
-                    let _ = cursor_for_key.set(0);
+                    cursor_for_key.set(0);
                 }
                 "End" => {
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            let _ = sel_for_key.set(Some(cursor));
+                            sel_for_key.set(Some(cursor));
                         }
                     } else {
-                        let _ = sel_for_key.set(None);
+                        sel_for_key.set(None);
                     }
-                    let _ = cursor_for_key.set(text_val.len());
+                    cursor_for_key.set(text_val.len());
                 }
                 "Backspace" => {
                     if read_only {
@@ -407,9 +394,9 @@ impl View for TextInput {
 
                     if let Some(sel_start) = sel {
                         let new_cursor = delete_selection(&mut new_text, cursor, sel_start);
-                        let _ = val_for_key.set(new_text.clone());
-                        let _ = cursor_for_key.set(new_cursor);
-                        let _ = sel_for_key.set(None);
+                        val_for_key.set(new_text.clone());
+                        cursor_for_key.set(new_cursor);
+                        sel_for_key.set(None);
                         if let Some(ref cb) = *on_change_for_key {
                             cb(&new_text);
                         }
@@ -421,8 +408,8 @@ impl View for TextInput {
                     }
                     let prev = prev_char_boundary(&new_text, cursor);
                     new_text.drain(prev..cursor);
-                    let _ = val_for_key.set(new_text.clone());
-                    let _ = cursor_for_key.set(prev);
+                    val_for_key.set(new_text.clone());
+                    cursor_for_key.set(prev);
                     if let Some(ref cb) = *on_change_for_key {
                         cb(&new_text);
                     }
@@ -435,9 +422,9 @@ impl View for TextInput {
 
                     if let Some(sel_start) = sel {
                         let new_cursor = delete_selection(&mut new_text, cursor, sel_start);
-                        let _ = val_for_key.set(new_text.clone());
-                        let _ = cursor_for_key.set(new_cursor);
-                        let _ = sel_for_key.set(None);
+                        val_for_key.set(new_text.clone());
+                        cursor_for_key.set(new_cursor);
+                        sel_for_key.set(None);
                         if let Some(ref cb) = *on_change_for_key {
                             cb(&new_text);
                         }
@@ -449,14 +436,14 @@ impl View for TextInput {
                     }
                     let next = next_char_boundary(&new_text, cursor);
                     new_text.drain(cursor..next);
-                    let _ = val_for_key.set(new_text.clone());
+                    val_for_key.set(new_text.clone());
                     if let Some(ref cb) = *on_change_for_key {
                         cb(&new_text);
                     }
                 }
                 "a" if e.modifiers.ctrl || e.modifiers.meta => {
-                    let _ = sel_for_key.set(Some(0));
-                    let _ = cursor_for_key.set(text_val.len());
+                    sel_for_key.set(Some(0));
+                    cursor_for_key.set(text_val.len());
                 }
                 _ => {}
             }
@@ -479,7 +466,7 @@ mod tests {
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
-        create_scope(|cx| f(cx)).unwrap();
+        create_scope(|cx| f(cx));
         dispose_runtime();
     }
 
@@ -564,7 +551,7 @@ mod tests {
     #[test]
     fn controlled_reads_signal() {
         with_scope(|cx| {
-            let sig = create_signal("initial".to_string()).unwrap();
+            let sig = create_signal("initial".to_string());
             let node = TextInput::new().controlled(sig).build(cx);
             let el = extract_element(&node);
             assert_eq!(

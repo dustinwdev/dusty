@@ -28,6 +28,9 @@ pub trait TextMeasure {
     ///
     /// Implementations must not panic. If measurement fails (e.g. due to a
     /// borrow conflict), return `(0.0, 0.0)` and log the error.
+    ///
+    /// Note: a `(0.0, 0.0)` result for non-empty text typically indicates an
+    /// error (e.g. font system unavailable).
     fn measure(&self, text: &str, max_width: Option<f32>, font: &FontStyle) -> (f32, f32);
 }
 
