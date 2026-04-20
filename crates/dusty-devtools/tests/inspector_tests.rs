@@ -13,7 +13,7 @@ use dusty_devtools::inspector::{inspect, InspectorNodeKind, NodeBounds};
 use dusty_devtools::DevtoolsError;
 use dusty_layout::{compute_layout, TextMeasure};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-use dusty_style::{FontStyle, Style};
+use dusty_style::{FontStyle, Length, Style};
 
 struct MockMeasure;
 impl TextMeasure for MockMeasure {
@@ -155,8 +155,8 @@ fn with_layout_bounds() {
     with_scope(|cx| {
         let node = el("Box", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
                 ..Style::default()
             })
             .build_node();
@@ -184,16 +184,16 @@ fn without_layout_bounds_are_none() {
 fn style_extraction_from_element() {
     with_scope(|cx| {
         let style = Style {
-            width: Some(100.0),
-            height: Some(50.0),
+            width: Some(Length::Px(100.0)),
+            height: Some(Length::Px(50.0)),
             ..Style::default()
         };
         let node = el("Box", cx).style(style).build_node();
         let tree = inspect(&node, None).unwrap();
 
         let snapshot = tree.nodes[0].style.as_ref().unwrap();
-        assert_eq!(snapshot.0.width, Some(100.0));
-        assert_eq!(snapshot.0.height, Some(50.0));
+        assert_eq!(snapshot.0.width, Some(Length::Px(100.0)));
+        assert_eq!(snapshot.0.height, Some(Length::Px(50.0)));
     });
 }
 
@@ -276,8 +276,8 @@ fn layout_id_assignment_matches_layout() {
     with_scope(|cx| {
         let node = el("Root", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
                 ..Style::default()
             })
             .child(text("hello"))
@@ -309,23 +309,23 @@ fn fragment_does_not_consume_layout_id() {
         let frag = Node::Fragment(vec![
             el("A", cx)
                 .style(Style {
-                    width: Some(50.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(50.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node(),
             el("B", cx)
                 .style(Style {
-                    width: Some(50.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(50.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node(),
         ]);
         let parent = el("Parent", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
                 ..Style::default()
             })
             .child_node(frag)

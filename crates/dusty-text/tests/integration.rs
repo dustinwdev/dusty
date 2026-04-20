@@ -3,7 +3,7 @@
 use dusty_core::{el, text};
 use dusty_layout::{compute_layout, TextMeasure};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-use dusty_style::{FontStyle, FontWeight, Style};
+use dusty_style::{FontStyle, FontWeight, Length, Style};
 use dusty_text::{TextLayout, TextSpan, TextSystem, Truncation};
 
 fn with_scope(f: impl FnOnce(dusty_reactive::Scope)) {
@@ -45,8 +45,8 @@ fn text_node_wraps_in_constrained_container() {
     with_scope(|cx| {
         let node = el("Container", cx)
             .style(Style {
-                width: Some(100.0),
-                height: Some(400.0),
+                width: Some(Length::Px(100.0)),
+                height: Some(Length::Px(400.0)),
                 ..Style::default()
             })
             .child(dusty_core::Node::Text(text(long_text)))

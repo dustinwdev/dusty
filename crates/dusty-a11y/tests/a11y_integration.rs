@@ -14,7 +14,7 @@ use dusty_a11y::build_accessibility_tree;
 use dusty_core::{el, text};
 use dusty_layout::{compute_layout, TextMeasure};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-use dusty_style::{FontStyle, Style};
+use dusty_style::{FontStyle, Length, Style};
 
 struct MockMeasure;
 impl TextMeasure for MockMeasure {
@@ -48,8 +48,8 @@ fn button_with_label_produces_correct_a11y_tree() {
         let node = el("Button", cx)
             .attr("label", "Submit")
             .style(Style {
-                width: Some(120.0),
-                height: Some(40.0),
+                width: Some(Length::Px(120.0)),
+                height: Some(Length::Px(40.0)),
                 ..Style::default()
             })
             .build_node();
@@ -83,8 +83,8 @@ fn form_with_multiple_widgets() {
     with_scope(|cx| {
         let node = el("Col", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(200.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(200.0)),
                 flex_direction: Some(dusty_style::FlexDirection::Column),
                 ..Style::default()
             })
@@ -93,8 +93,8 @@ fn form_with_multiple_widgets() {
                     .attr("label", "OK")
                     .attr("disabled", true)
                     .style(Style {
-                        width: Some(100.0),
-                        height: Some(30.0),
+                        width: Some(Length::Px(100.0)),
+                        height: Some(Length::Px(30.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -103,8 +103,8 @@ fn form_with_multiple_widgets() {
                 el("TextInput", cx)
                     .attr("placeholder", "Type here")
                     .style(Style {
-                        width: Some(200.0),
-                        height: Some(30.0),
+                        width: Some(Length::Px(200.0)),
+                        height: Some(Length::Px(30.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -114,8 +114,8 @@ fn form_with_multiple_widgets() {
                     .attr("checked", true)
                     .attr("label", "Accept terms")
                     .style(Style {
-                        width: Some(20.0),
-                        height: Some(20.0),
+                        width: Some(Length::Px(20.0)),
+                        height: Some(Length::Px(20.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -167,17 +167,17 @@ fn nested_layout_bounds_match() {
     with_scope(|cx| {
         let node = el("Outer", cx)
             .style(Style {
-                width: Some(400.0),
-                height: Some(300.0),
-                padding: dusty_style::Edges::all(20.0),
+                width: Some(Length::Px(400.0)),
+                height: Some(Length::Px(300.0)),
+                padding: dusty_style::Edges::all(dusty_style::LengthPercent::Px(20.0)),
                 flex_direction: Some(dusty_style::FlexDirection::Column),
                 ..Style::default()
             })
             .child(
                 el("Inner", cx)
                     .style(Style {
-                        width: Some(200.0),
-                        height: Some(100.0),
+                        width: Some(Length::Px(200.0)),
+                        height: Some(Length::Px(100.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -211,8 +211,8 @@ fn disabled_button_propagated() {
             .attr("disabled", true)
             .attr("label", "Can't click")
             .style(Style {
-                width: Some(100.0),
-                height: Some(40.0),
+                width: Some(Length::Px(100.0)),
+                height: Some(Length::Px(40.0)),
                 ..Style::default()
             })
             .build_node();
@@ -238,8 +238,8 @@ fn live_region_on_container() {
         let node = el("Row", cx)
             .attr("aria-live", "polite")
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
                 ..Style::default()
             })
             .child(text("Status: ready"))
@@ -274,8 +274,8 @@ fn text_inside_element_correct_order() {
         let node = el("Button", cx)
             .attr("label", "Send")
             .style(Style {
-                width: Some(100.0),
-                height: Some(40.0),
+                width: Some(Length::Px(100.0)),
+                height: Some(Length::Px(40.0)),
                 ..Style::default()
             })
             .child(text("Send"))

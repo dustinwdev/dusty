@@ -24,8 +24,8 @@ fn main() {
                 el("Swatch", cx)
                     .style(Style {
                         background: Some(color),
-                        width: Some(32.0),
-                        height: Some(32.0),
+                        width: Some(Length::Px(32.0)),
+                        height: Some(Length::Px(32.0)),
                         border_radius: Corners::all(4.0),
                         ..Style::default()
                     })
@@ -38,8 +38,8 @@ fn main() {
                 el("SpacingBox", cx)
                     .style(Style {
                         background: Some(Palette::BLUE.get(200).unwrap()),
-                        width: Some(size),
-                        height: Some(24.0),
+                        width: Some(Length::Px(size)),
+                        height: Some(Length::Px(24.0)),
                         border_radius: Corners::all(2.0),
                         ..Style::default()
                     })
@@ -51,8 +51,8 @@ fn main() {
                 el("RadiusBox", cx)
                     .style(Style {
                         background: Some(Palette::INDIGO.get(300).unwrap()),
-                        width: Some(48.0),
-                        height: Some(48.0),
+                        width: Some(Length::Px(48.0)),
+                        height: Some(Length::Px(48.0)),
                         border_radius: Corners::all(token.to_px()),
                         ..Style::default()
                     })

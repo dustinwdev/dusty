@@ -364,15 +364,15 @@ mod tests {
     fn style_extraction() {
         with_scope(|cx| {
             let style = Style {
-                width: Some(100.0),
-                height: Some(50.0),
+                width: Some(dusty_style::Length::Px(100.0)),
+                height: Some(dusty_style::Length::Px(50.0)),
                 ..Style::default()
             };
             let node = el("Box", cx).style(style.clone()).build_node();
             let tree = inspect(&node, None).unwrap();
             let snapshot = tree.nodes[0].style.as_ref().unwrap();
-            assert_eq!(snapshot.0.width, Some(100.0));
-            assert_eq!(snapshot.0.height, Some(50.0));
+            assert_eq!(snapshot.0.width, Some(dusty_style::Length::Px(100.0)));
+            assert_eq!(snapshot.0.height, Some(dusty_style::Length::Px(50.0)));
         });
     }
 

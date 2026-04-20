@@ -44,7 +44,7 @@ pub use dusty_core::{
 pub use dusty_style::{
     AlignItems, AlignSelf, BoxShadow, Color, ColorScale, ColorStop, Corners, Edges, FlexDirection,
     FlexWrap, FontSlant, FontStyle, FontWeight, GradientDirection, InteractionState,
-    JustifyContent, LinearGradient, Overflow, Palette, Style,
+    JustifyContent, Length, LengthPercent, LinearGradient, Overflow, Palette, Style,
 };
 
 // Theme

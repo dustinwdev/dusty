@@ -112,6 +112,7 @@ mod tests {
     use super::*;
     use dusty_core::{AttributeValue, Element};
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
+    use dusty_style::Length;
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
@@ -189,15 +190,15 @@ mod tests {
         with_scope(|cx| {
             let node = Image::new("photo.png")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(150.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(150.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(200.0));
-            assert_eq!(style.height, Some(150.0));
+            assert_eq!(style.width, Some(Length::Px(200.0)));
+            assert_eq!(style.height, Some(Length::Px(150.0)));
         });
     }
 }

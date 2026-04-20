@@ -2,14 +2,14 @@
 
 use dusty_style::{
     palette::Palette, tokens, BoxShadow, Color, Corners, Edges, FlexDirection, FontStyle,
-    FontWeight, JustifyContent, Style,
+    FontWeight, JustifyContent, Length, LengthPercent, Style,
 };
 
 #[test]
 fn end_to_end_cascade() {
     // Base theme style
     let base = Style {
-        padding: Edges::all(tokens::spacing(2.0)), // 8px
+        padding: Edges::all(LengthPercent::Px(tokens::spacing(2.0))), // 8px
         background: Some(Color::WHITE),
         foreground: Some(Palette::SLATE.get(900).unwrap_or(Color::BLACK)),
         font: FontStyle {
@@ -23,7 +23,7 @@ fn end_to_end_cascade() {
 
     // Component-level style
     let card = Style {
-        padding: Edges::all(tokens::spacing(4.0)), // 16px
+        padding: Edges::all(LengthPercent::Px(tokens::spacing(4.0))), // 16px
         background: Some(Color::WHITE),
         border_radius: Corners::all(tokens::RadiusToken::Lg.to_px()),
         shadow: Some(tokens::ShadowToken::Md.to_shadows().into_owned()),
@@ -47,7 +47,7 @@ fn end_to_end_cascade() {
     let result = base.merge(&card).merge(&explicit).merge(&hover);
 
     // Padding: card wins (16px all sides)
-    assert_eq!(result.padding, Edges::all(16.0));
+    assert_eq!(result.padding, Edges::all(LengthPercent::Px(16.0)));
 
     // Background: explicit wins (blue-50)
     assert_eq!(
@@ -86,8 +86,8 @@ fn style_as_dyn_any_roundtrip() {
     use std::any::Any;
 
     let style = Style {
-        width: Some(200.0),
-        height: Some(100.0),
+        width: Some(Length::Px(200.0)),
+        height: Some(Length::Px(100.0)),
         background: Some(Palette::RED.get(500).unwrap_or(Color::BLACK)),
         shadow: Some(tokens::ShadowToken::Sm.to_shadows().into_owned()),
         ..Style::default()
@@ -101,8 +101,8 @@ fn style_as_dyn_any_roundtrip() {
     assert!(recovered.is_some());
     let default = Style::default();
     let recovered = recovered.unwrap_or(&default);
-    assert_eq!(recovered.width, Some(200.0));
-    assert_eq!(recovered.height, Some(100.0));
+    assert_eq!(recovered.width, Some(Length::Px(200.0)));
+    assert_eq!(recovered.height, Some(Length::Px(100.0)));
     assert_eq!(
         recovered.background,
         Some(Palette::RED.get(500).unwrap_or(Color::BLACK))
@@ -113,7 +113,10 @@ fn style_as_dyn_any_roundtrip() {
 fn palette_to_style_pipeline() {
     // Build a style entirely from palette + tokens
     let style = Style {
-        padding: Edges::xy(tokens::spacing(4.0), tokens::spacing(2.0)),
+        padding: Edges::xy(
+            LengthPercent::Px(tokens::spacing(4.0)),
+            LengthPercent::Px(tokens::spacing(2.0)),
+        ),
         background: Some(Palette::INDIGO.get(600).unwrap_or(Color::BLACK)),
         foreground: Some(Color::WHITE),
         border_radius: Corners::all(tokens::RadiusToken::Md.to_px()),
@@ -126,8 +129,8 @@ fn palette_to_style_pipeline() {
         ..Style::default()
     };
 
-    assert_eq!(style.padding.left, Some(16.0)); // spacing(4) = 16
-    assert_eq!(style.padding.top, Some(8.0)); // spacing(2) = 8
+    assert_eq!(style.padding.left, Some(LengthPercent::Px(16.0))); // spacing(4) = 16
+    assert_eq!(style.padding.top, Some(LengthPercent::Px(8.0))); // spacing(2) = 8
     assert_eq!(
         style.background,
         Some(Palette::INDIGO.get(600).unwrap_or(Color::BLACK))

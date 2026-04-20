@@ -5,7 +5,8 @@ use dusty_core::event::{
 use dusty_core::node::{ComponentNode, Node};
 use dusty_core::view::View;
 use dusty_reactive::{create_signal, Scope, Signal};
-use dusty_style::Style;
+use dusty_style::theme::use_theme;
+use dusty_style::{Corners, Edges, Length, LengthPercent, Style};
 
 /// Source of truth for the text value.
 pub enum InputSource {
@@ -191,12 +192,30 @@ fn delete_selection(s: &mut String, cursor: usize, sel_start: usize) -> usize {
 impl View for TextInput {
     #[allow(clippy::too_many_lines)]
     fn build(self, cx: Scope) -> Node {
-        let base = Style::default();
+        let theme = use_theme();
+        let base = Style {
+            height: Some(Length::Px(36.0)),
+            padding: Edges::xy(LengthPercent::Px(12.0), LengthPercent::Px(8.0)),
+            border_width: Edges::all(1.0),
+            border_color: Some(theme.border),
+            border_radius: Corners::all(6.0),
+            background: Some(theme.surface),
+            ..Style::default()
+        };
 
         let merged = if let Some(user) = &self.user_style {
             base.merge(user)
         } else {
             base
+        };
+
+        let merged = if self.disabled {
+            merged.merge(&Style {
+                opacity: Some(0.5),
+                ..Style::default()
+            })
+        } else {
+            merged
         };
 
         let value_signal = match self.source {
@@ -250,14 +269,14 @@ impl View for TextInput {
         // Focus / Blur
         let focused_for_focus = focused_signal;
         builder = builder.on_focus(move |_ctx: &EventContext, _e: &FocusEvent| {
-            focused_for_focus.set(true);
+            focused_for_focus.set_if_changed(true);
         });
 
         let focused_for_blur = focused_signal;
         let sel_for_blur = selection_signal;
         builder = builder.on_blur(move |_ctx: &EventContext, _e: &BlurEvent| {
-            focused_for_blur.set(false);
-            sel_for_blur.set(None);
+            focused_for_blur.set_if_changed(false);
+            sel_for_blur.set_if_changed(None);
         });
 
         // Click — position cursor
@@ -273,8 +292,8 @@ impl View for TextInput {
             while safe_pos > 0 && !text.is_char_boundary(safe_pos) {
                 safe_pos -= 1;
             }
-            cursor_for_click.set(safe_pos);
-            sel_for_click.set(None);
+            cursor_for_click.set_if_changed(safe_pos);
+            sel_for_click.set_if_changed(None);
         });
 
         let read_only = self.read_only;
@@ -301,7 +320,7 @@ impl View for TextInput {
             // If there's a selection, delete it first
             if let Some(sel_start) = sel {
                 cursor = delete_selection(&mut new_text, cursor, sel_start);
-                sel_for_input.set(None);
+                sel_for_input.set_if_changed(None);
             }
 
             // Enforce max_length
@@ -316,8 +335,8 @@ impl View for TextInput {
             new_text.insert_str(cursor, &e.text);
             cursor += e.text.len();
 
-            val_for_input.set(new_text.clone());
-            cursor_for_input.set(cursor);
+            val_for_input.set_if_changed(new_text.clone());
+            cursor_for_input.set_if_changed(cursor);
 
             if let Some(ref cb) = *on_change_for_input {
                 cb(&new_text);
@@ -348,43 +367,43 @@ impl View for TextInput {
                     let new_cursor = prev_char_boundary(&text_val, cursor);
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            sel_for_key.set(Some(cursor));
+                            sel_for_key.set_if_changed(Some(cursor));
                         }
                     } else {
-                        sel_for_key.set(None);
+                        sel_for_key.set_if_changed(None);
                     }
-                    cursor_for_key.set(new_cursor);
+                    cursor_for_key.set_if_changed(new_cursor);
                 }
                 "ArrowRight" => {
                     let new_cursor = next_char_boundary(&text_val, cursor);
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            sel_for_key.set(Some(cursor));
+                            sel_for_key.set_if_changed(Some(cursor));
                         }
                     } else {
-                        sel_for_key.set(None);
+                        sel_for_key.set_if_changed(None);
                     }
-                    cursor_for_key.set(new_cursor);
+                    cursor_for_key.set_if_changed(new_cursor);
                 }
                 "Home" => {
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            sel_for_key.set(Some(cursor));
+                            sel_for_key.set_if_changed(Some(cursor));
                         }
                     } else {
-                        sel_for_key.set(None);
+                        sel_for_key.set_if_changed(None);
                     }
-                    cursor_for_key.set(0);
+                    cursor_for_key.set_if_changed(0);
                 }
                 "End" => {
                     if e.modifiers.shift {
                         if sel.is_none() {
-                            sel_for_key.set(Some(cursor));
+                            sel_for_key.set_if_changed(Some(cursor));
                         }
                     } else {
-                        sel_for_key.set(None);
+                        sel_for_key.set_if_changed(None);
                     }
-                    cursor_for_key.set(text_val.len());
+                    cursor_for_key.set_if_changed(text_val.len());
                 }
                 "Backspace" => {
                     if read_only {
@@ -394,9 +413,9 @@ impl View for TextInput {
 
                     if let Some(sel_start) = sel {
                         let new_cursor = delete_selection(&mut new_text, cursor, sel_start);
-                        val_for_key.set(new_text.clone());
-                        cursor_for_key.set(new_cursor);
-                        sel_for_key.set(None);
+                        val_for_key.set_if_changed(new_text.clone());
+                        cursor_for_key.set_if_changed(new_cursor);
+                        sel_for_key.set_if_changed(None);
                         if let Some(ref cb) = *on_change_for_key {
                             cb(&new_text);
                         }
@@ -408,8 +427,8 @@ impl View for TextInput {
                     }
                     let prev = prev_char_boundary(&new_text, cursor);
                     new_text.drain(prev..cursor);
-                    val_for_key.set(new_text.clone());
-                    cursor_for_key.set(prev);
+                    val_for_key.set_if_changed(new_text.clone());
+                    cursor_for_key.set_if_changed(prev);
                     if let Some(ref cb) = *on_change_for_key {
                         cb(&new_text);
                     }
@@ -422,9 +441,9 @@ impl View for TextInput {
 
                     if let Some(sel_start) = sel {
                         let new_cursor = delete_selection(&mut new_text, cursor, sel_start);
-                        val_for_key.set(new_text.clone());
-                        cursor_for_key.set(new_cursor);
-                        sel_for_key.set(None);
+                        val_for_key.set_if_changed(new_text.clone());
+                        cursor_for_key.set_if_changed(new_cursor);
+                        sel_for_key.set_if_changed(None);
                         if let Some(ref cb) = *on_change_for_key {
                             cb(&new_text);
                         }
@@ -436,14 +455,14 @@ impl View for TextInput {
                     }
                     let next = next_char_boundary(&new_text, cursor);
                     new_text.drain(cursor..next);
-                    val_for_key.set(new_text.clone());
+                    val_for_key.set_if_changed(new_text.clone());
                     if let Some(ref cb) = *on_change_for_key {
                         cb(&new_text);
                     }
                 }
                 "a" if e.modifiers.ctrl || e.modifiers.meta => {
-                    sel_for_key.set(Some(0));
-                    cursor_for_key.set(text_val.len());
+                    sel_for_key.set_if_changed(Some(0));
+                    cursor_for_key.set_if_changed(text_val.len());
                 }
                 _ => {}
             }
@@ -621,13 +640,13 @@ mod tests {
         with_scope(|cx| {
             let node = TextInput::new()
                 .style(Style {
-                    width: Some(300.0),
+                    width: Some(Length::Px(300.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(300.0));
+            assert_eq!(style.width, Some(Length::Px(300.0)));
         });
     }
 

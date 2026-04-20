@@ -155,7 +155,7 @@ mod tests {
     use super::*;
     use dusty_core::Element;
     use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime};
-    use dusty_style::Color;
+    use dusty_style::{Color, Length};
 
     /// Drop guard that ensures `dispose_runtime()` runs even if a test panics.
     /// This prevents runtime state from leaking into subsequent tests.
@@ -244,15 +244,15 @@ mod tests {
         with_scope(|cx| {
             let node = Canvas::new(|_frame| {})
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(150.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(150.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(200.0));
-            assert_eq!(style.height, Some(150.0));
+            assert_eq!(style.width, Some(Length::Px(200.0)));
+            assert_eq!(style.height, Some(Length::Px(150.0)));
         });
     }
 

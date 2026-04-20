@@ -4,7 +4,8 @@ use dusty_core::event::{ClickEvent, EventContext};
 use dusty_core::node::{text, text_dynamic, ComponentNode, Node, TextNode};
 use dusty_core::view::View;
 use dusty_reactive::Scope;
-use dusty_style::{Corners, Edges, Style};
+use dusty_style::theme::use_theme;
+use dusty_style::{Color, Corners, Edges, LengthPercent, Style};
 
 use crate::common::LabelContent;
 
@@ -108,9 +109,20 @@ impl Button {
 
 impl View for Button {
     fn build(self, cx: Scope) -> Node {
+        let theme = use_theme();
+        let (bg, fg, border) = variant_colors(self.variant, &theme);
+
         let base = Style {
-            padding: Edges::xy(16.0, 8.0),
-            border_radius: Corners::all(4.0),
+            padding: Edges::xy(LengthPercent::Px(16.0), LengthPercent::Px(8.0)),
+            border_radius: Corners::all(6.0),
+            background: Some(bg),
+            foreground: Some(fg),
+            border_color: border,
+            border_width: if border.is_some() {
+                Edges::all(1.0)
+            } else {
+                Edges::default()
+            },
             ..Style::default()
         };
 
@@ -166,6 +178,39 @@ impl View for Button {
     }
 }
 
+/// Returns `(background, foreground, border)` colors for a button variant.
+#[allow(clippy::unreadable_literal)]
+fn variant_colors(
+    variant: ButtonVariant,
+    theme: &dusty_style::theme::Theme,
+) -> (Color, Color, Option<Color>) {
+    match variant {
+        ButtonVariant::Primary => {
+            let bg = theme
+                .primary
+                .get(600)
+                .unwrap_or_else(|| Color::hex(0x2563eb));
+            (bg, Color::WHITE, None)
+        }
+        ButtonVariant::Secondary => {
+            let bg = theme
+                .secondary
+                .get(200)
+                .unwrap_or_else(|| Color::hex(0xe2e8f0));
+            (bg, theme.foreground, None)
+        }
+        ButtonVariant::Outline => (Color::TRANSPARENT, theme.foreground, Some(theme.border)),
+        ButtonVariant::Ghost => (Color::TRANSPARENT, theme.foreground, None),
+        ButtonVariant::Danger => {
+            let bg = theme
+                .danger
+                .get(600)
+                .unwrap_or_else(|| Color::hex(0xdc2626));
+            (bg, Color::WHITE, None)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,7 +218,7 @@ mod tests {
     use dusty_core::node::TextContent as NodeTextContent;
     use dusty_core::AttributeValue;
     use dusty_reactive::create_signal;
-    use dusty_style::Edges;
+    use dusty_style::{Edges, Length, LengthPercent};
 
     #[test]
     fn builds_component() {
@@ -276,15 +321,18 @@ mod tests {
         with_scope(|cx| {
             let node = Button::new("Styled")
                 .style(Style {
-                    width: Some(200.0),
+                    width: Some(Length::Px(200.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(200.0));
+            assert_eq!(style.width, Some(Length::Px(200.0)));
             // Base padding should still be present
-            assert_eq!(style.padding, Edges::xy(16.0, 8.0));
+            assert_eq!(
+                style.padding,
+                Edges::xy(LengthPercent::Px(16.0), LengthPercent::Px(8.0))
+            );
         });
     }
 

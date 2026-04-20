@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     use dusty_core::Element;
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-    use dusty_style::Style;
+    use dusty_style::{Length, Style};
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
@@ -129,7 +129,7 @@ mod tests {
         with_scope(|cx| {
             let node = Spacer::new()
                 .style(Style {
-                    width: Some(20.0),
+                    width: Some(Length::Px(20.0)),
                     ..Style::default()
                 })
                 .build(cx);
@@ -137,7 +137,7 @@ mod tests {
             let style = el.style().downcast_ref::<Style>();
             assert!(style.is_some());
             let s = style.unwrap();
-            assert_eq!(s.width, Some(20.0));
+            assert_eq!(s.width, Some(Length::Px(20.0)));
             // flex_grow should still be present from base
             assert_eq!(s.flex_grow, Some(1.0));
         });

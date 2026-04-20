@@ -28,7 +28,7 @@ use crate::role::element_role;
 ///
 /// ```
 /// use dusty_core::{el, text};
-/// use dusty_style::{Style, FontStyle};
+/// use dusty_style::{Style, FontStyle, Length};
 /// use dusty_layout::{compute_layout, TextMeasure};
 /// use dusty_a11y::build_accessibility_tree;
 /// use dusty_reactive::{initialize_runtime, create_scope, dispose_runtime};
@@ -44,7 +44,7 @@ use crate::role::element_role;
 /// create_scope(|cx| {
 ///     let node = el("Button", cx)
 ///         .attr("label", "Submit")
-///         .style(Style { width: Some(100.0), height: Some(40.0), ..Style::default() })
+///         .style(Style { width: Some(Length::Px(100.0)), height: Some(Length::Px(40.0)), ..Style::default() })
 ///         .build_node();
 ///     let layout = compute_layout(&node, 400.0, 300.0, &Mock).unwrap();
 ///     let update = build_accessibility_tree(&node, &layout, None).unwrap();
@@ -298,7 +298,7 @@ mod tests {
     use dusty_core::{el, text, text_dynamic, ComponentNode};
     use dusty_layout::{compute_layout, TextMeasure};
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-    use dusty_style::{FontStyle, Style};
+    use dusty_style::{FontStyle, Length, Style};
 
     struct MockMeasure;
     impl TextMeasure for MockMeasure {
@@ -331,8 +331,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Button", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -349,8 +349,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Box", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -367,8 +367,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Button", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -422,15 +422,15 @@ mod tests {
         with_scope(|cx| {
             let node = el("Row", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child(
                     el("A", cx)
                         .style(Style {
-                            width: Some(50.0),
-                            height: Some(50.0),
+                            width: Some(Length::Px(50.0)),
+                            height: Some(Length::Px(50.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -438,8 +438,8 @@ mod tests {
                 .child(
                     el("B", cx)
                         .style(Style {
-                            width: Some(50.0),
-                            height: Some(50.0),
+                            width: Some(Length::Px(50.0)),
+                            height: Some(Length::Px(50.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -467,22 +467,22 @@ mod tests {
         with_scope(|cx| {
             let node = el("Outer", cx)
                 .style(Style {
-                    width: Some(300.0),
-                    height: Some(300.0),
+                    width: Some(Length::Px(300.0)),
+                    height: Some(Length::Px(300.0)),
                     ..Style::default()
                 })
                 .child(
                     el("Middle", cx)
                         .style(Style {
-                            width: Some(200.0),
-                            height: Some(200.0),
+                            width: Some(Length::Px(200.0)),
+                            height: Some(Length::Px(200.0)),
                             ..Style::default()
                         })
                         .child(
                             el("Inner", cx)
                                 .style(Style {
-                                    width: Some(100.0),
-                                    height: Some(100.0),
+                                    width: Some(Length::Px(100.0)),
+                                    height: Some(Length::Px(100.0)),
                                     ..Style::default()
                                 })
                                 .build_node(),
@@ -528,15 +528,15 @@ mod tests {
             let frag = Node::Fragment(vec![
                 el("A", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
                 el("B", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -544,8 +544,8 @@ mod tests {
 
             let parent = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child_node(frag)
@@ -571,15 +571,15 @@ mod tests {
             let frag = Node::Fragment(vec![
                 el("A", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
                 el("B", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -587,8 +587,8 @@ mod tests {
 
             let parent = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child_node(frag)
@@ -607,8 +607,8 @@ mod tests {
         with_scope(|cx| {
             let inner = el("Inner", cx)
                 .style(Style {
-                    width: Some(80.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(80.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -620,8 +620,8 @@ mod tests {
 
             let parent = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child_node(comp)
@@ -641,8 +641,8 @@ mod tests {
             let node = el("Button", cx)
                 .attr("label", "Submit")
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -665,8 +665,8 @@ mod tests {
             let node = el("Button", cx)
                 .attr("aria-label", "Close")
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -689,8 +689,8 @@ mod tests {
             let node = el("Button", cx)
                 .attr("description", "Click to submit the form")
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -713,8 +713,8 @@ mod tests {
             let node = el("TextInput", cx)
                 .attr("placeholder", "Enter name")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(30.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(30.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -738,8 +738,8 @@ mod tests {
                 .attr("label", "Full Name")
                 .attr("placeholder", "Enter name")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(30.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(30.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -762,8 +762,8 @@ mod tests {
             let node = el("TextInput", cx)
                 .attr("value", "hello")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(30.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(30.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -786,8 +786,8 @@ mod tests {
             let node = el("Button", cx)
                 .attr("disabled", true)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -810,8 +810,8 @@ mod tests {
             let node = el("Checkbox", cx)
                 .attr("checked", true)
                 .style(Style {
-                    width: Some(20.0),
-                    height: Some(20.0),
+                    width: Some(Length::Px(20.0)),
+                    height: Some(Length::Px(20.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -834,8 +834,8 @@ mod tests {
             let node = el("Checkbox", cx)
                 .attr("checked", false)
                 .style(Style {
-                    width: Some(20.0),
-                    height: Some(20.0),
+                    width: Some(Length::Px(20.0)),
+                    height: Some(Length::Px(20.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -857,15 +857,15 @@ mod tests {
         with_scope(|cx| {
             let node = el("Row", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child(
                     el("Button", cx)
                         .style(Style {
-                            width: Some(80.0),
-                            height: Some(30.0),
+                            width: Some(Length::Px(80.0)),
+                            height: Some(Length::Px(30.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -883,8 +883,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Box", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -900,8 +900,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Box", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -928,8 +928,8 @@ mod tests {
             let node = el("Row", cx)
                 .attr("aria-live", "polite")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -952,8 +952,8 @@ mod tests {
             let node = el("Row", cx)
                 .attr("aria-live", "assertive")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -975,8 +975,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Button", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .child(text("Submit"))
@@ -1000,8 +1000,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Row", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -1028,8 +1028,8 @@ mod tests {
         with_scope(|cx| {
             let helper = el("X", cx)
                 .style(Style {
-                    width: Some(10.0),
-                    height: Some(10.0),
+                    width: Some(Length::Px(10.0)),
+                    height: Some(Length::Px(10.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -1046,8 +1046,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Root", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child(text("hello"))

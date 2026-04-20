@@ -12,6 +12,7 @@ macro_rules! col {
         $crate::__macro_internals::el("Col", $cx)
             .style($crate::__macro_internals::Style {
                 flex_direction: Some($crate::__macro_internals::FlexDirection::Column),
+                gap: Some($crate::__macro_internals::LengthPercent::Px(8.0)),
                 ..$crate::__macro_internals::Style::default()
             })
             .build_node()
@@ -20,6 +21,7 @@ macro_rules! col {
         $crate::__macro_internals::el("Col", $cx)
             .style($crate::__macro_internals::Style {
                 flex_direction: Some($crate::__macro_internals::FlexDirection::Column),
+                gap: Some($crate::__macro_internals::LengthPercent::Px(8.0)),
                 ..$crate::__macro_internals::Style::default()
             })
             .children(($($child,)+))
@@ -41,6 +43,8 @@ macro_rules! row {
         $crate::__macro_internals::el("Row", $cx)
             .style($crate::__macro_internals::Style {
                 flex_direction: Some($crate::__macro_internals::FlexDirection::Row),
+                gap: Some($crate::__macro_internals::LengthPercent::Px(8.0)),
+                align_items: Some($crate::__macro_internals::AlignItems::Center),
                 ..$crate::__macro_internals::Style::default()
             })
             .build_node()
@@ -49,6 +53,8 @@ macro_rules! row {
         $crate::__macro_internals::el("Row", $cx)
             .style($crate::__macro_internals::Style {
                 flex_direction: Some($crate::__macro_internals::FlexDirection::Row),
+                gap: Some($crate::__macro_internals::LengthPercent::Px(8.0)),
+                align_items: Some($crate::__macro_internals::AlignItems::Center),
                 ..$crate::__macro_internals::Style::default()
             })
             .children(($($child,)+))
@@ -106,7 +112,7 @@ mod tests {
     use dusty_core::view::View;
     use dusty_core::Element;
     use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime, Scope};
-    use dusty_style::{FlexDirection, Style};
+    use dusty_style::{FlexDirection, Length, Style};
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
@@ -299,13 +305,13 @@ mod tests {
     fn text_macro_returns_widget_for_chaining() {
         with_scope(|cx| {
             let widget = text!("styled").style(Style {
-                width: Some(100.0),
+                width: Some(Length::Px(100.0)),
                 ..Style::default()
             });
             let node = widget.build(cx);
             let el = extract_component_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(100.0));
+            assert_eq!(style.width, Some(Length::Px(100.0)));
         });
     }
 }

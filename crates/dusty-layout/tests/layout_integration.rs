@@ -9,7 +9,7 @@
 use dusty_core::{el, text, ComponentNode, Node};
 use dusty_layout::{compute_layout, LayoutError, LayoutNodeId, TextMeasure};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime, Scope};
-use dusty_style::{Edges, FlexDirection, FlexWrap, FontStyle, Style};
+use dusty_style::{Edges, FlexDirection, FlexWrap, FontStyle, Length, LengthPercent, Style};
 
 /// Mock text measure: 8px per character wide, 16px line height.
 /// Wraps at `max_width` if provided.
@@ -61,8 +61,8 @@ fn element_with_fixed_size() {
     with_scope(|cx| {
         let node = el("Box", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(150.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(150.0)),
                 ..Style::default()
             })
             .build_node();
@@ -81,8 +81,8 @@ fn row_layout_distributes_children() {
     with_scope(|cx| {
         let node = el("Row", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(100.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 ..Style::default()
             })
@@ -120,15 +120,15 @@ fn column_layout_stacks_vertically() {
     with_scope(|cx| {
         let node = el("Col", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(300.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(300.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
             .child(
                 el("A", cx)
                     .style(Style {
-                        height: Some(80.0),
+                        height: Some(Length::Px(80.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -136,7 +136,7 @@ fn column_layout_stacks_vertically() {
             .child(
                 el("B", cx)
                     .style(Style {
-                        height: Some(60.0),
+                        height: Some(Length::Px(60.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -161,22 +161,22 @@ fn nested_flex_containers() {
     with_scope(|cx| {
         let node = el("Outer", cx)
             .style(Style {
-                width: Some(400.0),
-                height: Some(200.0),
+                width: Some(Length::Px(400.0)),
+                height: Some(Length::Px(200.0)),
                 flex_direction: Some(FlexDirection::Row),
                 ..Style::default()
             })
             .child(
                 el("Left", cx)
                     .style(Style {
-                        width: Some(200.0),
+                        width: Some(Length::Px(200.0)),
                         flex_direction: Some(FlexDirection::Column),
                         ..Style::default()
                     })
                     .child(
                         el("TopLeft", cx)
                             .style(Style {
-                                height: Some(100.0),
+                                height: Some(Length::Px(100.0)),
                                 ..Style::default()
                             })
                             .build_node(),
@@ -184,7 +184,7 @@ fn nested_flex_containers() {
                     .child(
                         el("BottomLeft", cx)
                             .style(Style {
-                                height: Some(100.0),
+                                height: Some(Length::Px(100.0)),
                                 ..Style::default()
                             })
                             .build_node(),
@@ -194,7 +194,7 @@ fn nested_flex_containers() {
             .child(
                 el("Right", cx)
                     .style(Style {
-                        width: Some(200.0),
+                        width: Some(Length::Px(200.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -228,16 +228,16 @@ fn gap_between_children() {
     with_scope(|cx| {
         let node = el("Row", cx)
             .style(Style {
-                width: Some(400.0),
-                height: Some(100.0),
+                width: Some(Length::Px(400.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
-                gap: Some(20.0),
+                gap: Some(LengthPercent::Px(20.0)),
                 ..Style::default()
             })
             .child(
                 el("A", cx)
                     .style(Style {
-                        width: Some(100.0),
+                        width: Some(Length::Px(100.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -245,7 +245,7 @@ fn gap_between_children() {
             .child(
                 el("B", cx)
                     .style(Style {
-                        width: Some(100.0),
+                        width: Some(Length::Px(100.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -253,7 +253,7 @@ fn gap_between_children() {
             .child(
                 el("C", cx)
                     .style(Style {
-                        width: Some(100.0),
+                        width: Some(Length::Px(100.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -278,17 +278,17 @@ fn padding_affects_content_area() {
     with_scope(|cx| {
         let node = el("Container", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(200.0),
-                padding: Edges::all(20.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(200.0)),
+                padding: Edges::all(LengthPercent::Px(20.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
             .child(
                 el("Child", cx)
                     .style(Style {
-                        width: Some(100.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(100.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -311,17 +311,22 @@ fn margin_offsets_position() {
     with_scope(|cx| {
         let node = el("Container", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(300.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(300.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
             .child(
                 el("Child", cx)
                     .style(Style {
-                        width: Some(100.0),
-                        height: Some(50.0),
-                        margin: Edges::new(15.0, 0.0, 0.0, 25.0),
+                        width: Some(Length::Px(100.0)),
+                        height: Some(Length::Px(50.0)),
+                        margin: Edges::new(
+                            Length::Px(15.0),
+                            Length::Px(0.0),
+                            Length::Px(0.0),
+                            Length::Px(25.0),
+                        ),
                         ..Style::default()
                     })
                     .build_node(),
@@ -343,8 +348,8 @@ fn align_items_center() {
     with_scope(|cx| {
         let node = el("Row", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(100.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(dusty_style::AlignItems::Center),
                 ..Style::default()
@@ -352,8 +357,8 @@ fn align_items_center() {
             .child(
                 el("Short", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(20.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(20.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -374,8 +379,8 @@ fn justify_content_center() {
     with_scope(|cx| {
         let node = el("Row", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(100.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 justify_content: Some(dusty_style::JustifyContent::Center),
                 ..Style::default()
@@ -383,8 +388,8 @@ fn justify_content_center() {
             .child(
                 el("A", cx)
                     .style(Style {
-                        width: Some(100.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(100.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -404,8 +409,8 @@ fn justify_content_space_between() {
     with_scope(|cx| {
         let node = el("Row", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(100.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 justify_content: Some(dusty_style::JustifyContent::SpaceBetween),
                 ..Style::default()
@@ -413,7 +418,7 @@ fn justify_content_space_between() {
             .child(
                 el("A", cx)
                     .style(Style {
-                        width: Some(50.0),
+                        width: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -421,7 +426,7 @@ fn justify_content_space_between() {
             .child(
                 el("B", cx)
                     .style(Style {
-                        width: Some(50.0),
+                        width: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -444,8 +449,8 @@ fn flex_grow_proportional() {
     with_scope(|cx| {
         let node = el("Row", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(100.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 ..Style::default()
             })
@@ -482,7 +487,7 @@ fn flex_wrap_wraps_to_next_line() {
         // No fixed height — container sizes to content so wrap lines aren't stretched.
         let node = el("Row", cx)
             .style(Style {
-                width: Some(200.0),
+                width: Some(Length::Px(200.0)),
                 flex_direction: Some(FlexDirection::Row),
                 flex_wrap: Some(FlexWrap::Wrap),
                 ..Style::default()
@@ -490,8 +495,8 @@ fn flex_wrap_wraps_to_next_line() {
             .child(
                 el("A", cx)
                     .style(Style {
-                        width: Some(120.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(120.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -499,8 +504,8 @@ fn flex_wrap_wraps_to_next_line() {
             .child(
                 el("B", cx)
                     .style(Style {
-                        width: Some(120.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(120.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -524,8 +529,8 @@ fn min_max_constraints() {
     with_scope(|cx| {
         let node = el("Container", cx)
             .style(Style {
-                width: Some(400.0),
-                height: Some(200.0),
+                width: Some(Length::Px(400.0)),
+                height: Some(Length::Px(200.0)),
                 flex_direction: Some(FlexDirection::Row),
                 ..Style::default()
             })
@@ -533,9 +538,9 @@ fn min_max_constraints() {
                 el("Constrained", cx)
                     .style(Style {
                         flex_grow: Some(1.0),
-                        min_width: Some(100.0),
-                        max_width: Some(250.0),
-                        height: Some(50.0),
+                        min_width: Some(Length::Px(100.0)),
+                        max_width: Some(Length::Px(250.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -571,15 +576,15 @@ fn fragment_children_flattened() {
         let frag = Node::Fragment(vec![
             el("A", cx)
                 .style(Style {
-                    width: Some(50.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(50.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node(),
             el("B", cx)
                 .style(Style {
-                    width: Some(60.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(60.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node(),
@@ -587,8 +592,8 @@ fn fragment_children_flattened() {
 
         let node = el("Parent", cx)
             .style(Style {
-                width: Some(300.0),
-                height: Some(100.0),
+                width: Some(Length::Px(300.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 ..Style::default()
             })
@@ -613,8 +618,8 @@ fn component_node_transparent() {
     with_scope(|cx| {
         let inner = el("Inner", cx)
             .style(Style {
-                width: Some(80.0),
-                height: Some(40.0),
+                width: Some(Length::Px(80.0)),
+                height: Some(Length::Px(40.0)),
                 ..Style::default()
             })
             .build_node();
@@ -626,8 +631,8 @@ fn component_node_transparent() {
 
         let node = el("Parent", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
                 flex_direction: Some(FlexDirection::Row),
                 ..Style::default()
             })
@@ -651,8 +656,8 @@ fn border_width_affects_layout() {
     with_scope(|cx| {
         let node = el("Container", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(200.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(200.0)),
                 border_width: Edges::all(5.0),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
@@ -660,8 +665,8 @@ fn border_width_affects_layout() {
             .child(
                 el("Child", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -695,15 +700,15 @@ fn deeply_nested_absolute_positions() {
         // 4 levels deep, each with 10px padding
         let leaf = el("Leaf", cx)
             .style(Style {
-                width: Some(20.0),
-                height: Some(20.0),
+                width: Some(Length::Px(20.0)),
+                height: Some(Length::Px(20.0)),
                 ..Style::default()
             })
             .build_node();
 
         let level3 = el("L3", cx)
             .style(Style {
-                padding: Edges::all(10.0),
+                padding: Edges::all(LengthPercent::Px(10.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
@@ -712,7 +717,7 @@ fn deeply_nested_absolute_positions() {
 
         let level2 = el("L2", cx)
             .style(Style {
-                padding: Edges::all(10.0),
+                padding: Edges::all(LengthPercent::Px(10.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
@@ -721,7 +726,7 @@ fn deeply_nested_absolute_positions() {
 
         let level1 = el("L1", cx)
             .style(Style {
-                padding: Edges::all(10.0),
+                padding: Edges::all(LengthPercent::Px(10.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
@@ -730,9 +735,9 @@ fn deeply_nested_absolute_positions() {
 
         let root = el("Root", cx)
             .style(Style {
-                width: Some(400.0),
-                height: Some(400.0),
-                padding: Edges::all(10.0),
+                width: Some(Length::Px(400.0)),
+                height: Some(Length::Px(400.0)),
+                padding: Edges::all(LengthPercent::Px(10.0)),
                 flex_direction: Some(FlexDirection::Column),
                 ..Style::default()
             })
@@ -759,15 +764,15 @@ fn root_fragment_with_children() {
         let node = Node::Fragment(vec![
             el("A", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node(),
             el("B", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(50.0)),
                     ..Style::default()
                 })
                 .build_node(),
@@ -786,15 +791,15 @@ fn layout_result_iter_covers_all_nodes() {
     with_scope(|cx| {
         let node = el("Parent", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
                 ..Style::default()
             })
             .child(
                 el("Child", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -814,9 +819,9 @@ fn text_inside_element_with_padding() {
         // align_items: FlexStart prevents cross-axis stretch so text keeps intrinsic width.
         let node = el("Container", cx)
             .style(Style {
-                width: Some(200.0),
-                height: Some(100.0),
-                padding: Edges::all(10.0),
+                width: Some(Length::Px(200.0)),
+                height: Some(Length::Px(100.0)),
+                padding: Edges::all(LengthPercent::Px(10.0)),
                 flex_direction: Some(FlexDirection::Column),
                 align_items: Some(dusty_style::AlignItems::FlexStart),
                 ..Style::default()
@@ -832,5 +837,54 @@ fn text_inside_element_with_padding() {
         assert_eq!(text_rect.y, 10.0);
         assert_eq!(text_rect.width, 16.0); // "hi" = 2*8
         assert_eq!(text_rect.height, 16.0);
+    });
+}
+
+// --- Percent sizing ---
+
+#[test]
+fn percent_width_resolves_against_parent() {
+    with_scope(|cx| {
+        let node = el("Parent", cx)
+            .style(Style {
+                width: Some(Length::Px(400.0)),
+                height: Some(Length::Px(200.0)),
+                flex_direction: Some(FlexDirection::Row),
+                ..Style::default()
+            })
+            .child(
+                el("HalfChild", cx)
+                    .style(Style {
+                        width: Some(Length::Percent(0.5)),
+                        height: Some(Length::Percent(1.0)),
+                        ..Style::default()
+                    })
+                    .build_node(),
+            )
+            .build_node();
+
+        let result = compute_layout(&node, 1024.0, 768.0, &MockTextMeasure).unwrap();
+        let child = result.get(LayoutNodeId(1)).unwrap();
+        assert_eq!(child.width, 200.0); // 50% of 400
+        assert_eq!(child.height, 200.0); // 100% of 200
+    });
+}
+
+#[test]
+fn aspect_ratio_with_fixed_width_derives_height() {
+    with_scope(|cx| {
+        let node = el("Thumb", cx)
+            .style(Style {
+                width: Some(Length::Px(320.0)),
+                aspect_ratio: Some(16.0 / 9.0),
+                ..Style::default()
+            })
+            .build_node();
+
+        let result = compute_layout(&node, 1024.0, 768.0, &MockTextMeasure).unwrap();
+        let rect = result.root_rect().unwrap();
+        assert_eq!(rect.width, 320.0);
+        // 320 / (16/9) = 180
+        assert!((rect.height - 180.0).abs() < 0.001, "got {}", rect.height);
     });
 }
