@@ -3,7 +3,8 @@ use dusty_core::event::{ClickEvent, EventContext};
 use dusty_core::node::{text, text_dynamic, ComponentNode, Node, TextNode};
 use dusty_core::view::View;
 use dusty_reactive::{create_signal, Scope, Signal};
-use dusty_style::{Corners, Style};
+use dusty_style::theme::use_theme;
+use dusty_style::{AlignItems, Color, Corners, FlexDirection, Length, LengthPercent, Style};
 
 use crate::common::LabelContent;
 
@@ -109,16 +110,44 @@ impl Default for Toggle {
 }
 
 impl View for Toggle {
+    #[allow(clippy::unreadable_literal)]
     fn build(self, cx: Scope) -> Node {
-        let base = Style {
-            border_radius: Corners::all(9999.0),
+        let theme = use_theme();
+
+        // Container style: row layout with gap
+        let container_base = Style {
+            flex_direction: Some(FlexDirection::Row),
+            gap: Some(LengthPercent::Px(8.0)),
+            align_items: Some(AlignItems::Center),
             ..Style::default()
         };
 
-        let merged = if let Some(user) = &self.user_style {
-            base.merge(user)
+        let container_merged = if let Some(user) = &self.user_style {
+            container_base.merge(user)
         } else {
-            base
+            container_base
+        };
+
+        let container_styled = if self.disabled {
+            container_merged.merge(&Style {
+                opacity: Some(0.5),
+                ..Style::default()
+            })
+        } else {
+            container_merged
+        };
+
+        // Track style: pill-shaped track
+        let track_bg = theme
+            .secondary
+            .get(300)
+            .unwrap_or_else(|| Color::hex(0xcbd5e1));
+        let track_style = Style {
+            width: Some(Length::Px(44.0)),
+            height: Some(Length::Px(24.0)),
+            border_radius: Corners::all(9999.0),
+            background: Some(track_bg),
+            ..Style::default()
         };
 
         let signal = match self.source {
@@ -126,11 +155,15 @@ impl View for Toggle {
             ToggleSource::Controlled(sig) => sig,
         };
 
+        // Build track child element
+        let track = el("ToggleTrack", cx).style(track_style).build_node();
+
         let mut builder = el("Toggle", cx)
             .attr("on", signal.get())
             .attr("disabled", self.disabled)
-            .style(merged)
-            .data(signal);
+            .style(container_styled)
+            .data(signal)
+            .child_node(track);
 
         if let Some(label_content) = self.label {
             let label_child: TextNode = match label_content {
@@ -146,7 +179,7 @@ impl View for Toggle {
             builder = builder.on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
                 let current = signal.get();
                 let new_val = !current;
-                signal.set(new_val);
+                signal.set_if_changed(new_val);
                 if let Some(ref cb) = on_change {
                     cb(new_val);
                 }
@@ -231,11 +264,12 @@ mod tests {
         with_scope(|cx| {
             let node = Toggle::new().label("Dark mode").build(cx);
             let el = extract_element(&node);
-            assert_eq!(el.children().len(), 1);
-            if let Node::Text(text_node) = &el.children()[0] {
+            // Container has track + label = 2 children
+            assert_eq!(el.children().len(), 2);
+            if let Node::Text(text_node) = &el.children()[1] {
                 assert_eq!(text_node.current_text(), "Dark mode");
             } else {
-                panic!("expected Text child");
+                panic!("expected Text child at index 1");
             }
         });
     }
@@ -245,15 +279,13 @@ mod tests {
         with_scope(|cx| {
             let node = Toggle::new()
                 .style(Style {
-                    width: Some(48.0),
+                    gap: Some(LengthPercent::Px(12.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(48.0));
-            // Base border radius still present
-            assert_eq!(style.border_radius, Corners::all(9999.0));
+            assert_eq!(style.gap, Some(LengthPercent::Px(12.0)));
         });
     }
 
@@ -266,6 +298,64 @@ mod tests {
                 el.attr("label"),
                 Some(&AttributeValue::String("Dark mode".into()))
             );
+        });
+    }
+
+    #[test]
+    fn toggle_has_container_with_row_layout() {
+        with_scope(|cx| {
+            let node = Toggle::new().build(cx);
+            let el = extract_element(&node);
+            let style = el.style().downcast_ref::<Style>().unwrap();
+            assert_eq!(style.flex_direction, Some(FlexDirection::Row));
+            assert_eq!(style.gap, Some(LengthPercent::Px(8.0)));
+            assert_eq!(style.align_items, Some(AlignItems::Center));
+        });
+    }
+
+    #[test]
+    fn toggle_track_has_pill_shape() {
+        with_scope(|cx| {
+            let node = Toggle::new().build(cx);
+            let el = extract_element(&node);
+            if let Node::Element(track) = &el.children()[0] {
+                assert_eq!(track.name(), "ToggleTrack");
+                let style = track.style().downcast_ref::<Style>().unwrap();
+                assert_eq!(style.width, Some(Length::Px(44.0)));
+                assert_eq!(style.height, Some(Length::Px(24.0)));
+                assert_eq!(style.border_radius, Corners::all(9999.0));
+                assert!(style.background.is_some());
+            } else {
+                panic!("expected Element child for track");
+            }
+        });
+    }
+
+    #[test]
+    fn toggle_no_label_has_one_child() {
+        with_scope(|cx| {
+            let node = Toggle::new().build(cx);
+            let el = extract_element(&node);
+            assert_eq!(el.children().len(), 1);
+        });
+    }
+
+    #[test]
+    fn toggle_with_label_has_two_children() {
+        with_scope(|cx| {
+            let node = Toggle::new().label("Mode").build(cx);
+            let el = extract_element(&node);
+            assert_eq!(el.children().len(), 2);
+        });
+    }
+
+    #[test]
+    fn toggle_disabled_dims_opacity() {
+        with_scope(|cx| {
+            let node = Toggle::new().disabled(true).build(cx);
+            let el = extract_element(&node);
+            let style = el.style().downcast_ref::<Style>().unwrap();
+            assert_eq!(style.opacity, Some(0.5));
         });
     }
 

@@ -6,7 +6,10 @@
 
 use crate::gradient::{ColorStop, GradientDirection, LinearGradient};
 use crate::palette::Palette;
-use crate::style::{AlignItems, AlignSelf, FlexDirection, FlexWrap, JustifyContent, Overflow};
+use crate::style::{
+    AlignItems, AlignSelf, Display, FlexDirection, FlexWrap, JustifyContent, Length, LengthPercent,
+    Overflow, Position,
+};
 use crate::tokens::{self, RadiusToken, ShadowToken};
 use crate::{Color, Corners, Edges, FontSlant, FontWeight, Style};
 
@@ -23,14 +26,14 @@ impl Style {
     /// results in all-8px padding, not mixed.
     #[must_use]
     pub fn p(mut self, key: f32) -> Self {
-        self.padding = Edges::all(tokens::spacing(key));
+        self.padding = Edges::all(LengthPercent::Px(tokens::spacing(key)));
         self
     }
 
     /// Set horizontal padding (left + right) from a spacing scale key.
     #[must_use]
     pub fn px(mut self, key: f32) -> Self {
-        let val = tokens::spacing(key);
+        let val = LengthPercent::Px(tokens::spacing(key));
         self.padding.left = Some(val);
         self.padding.right = Some(val);
         self
@@ -39,7 +42,7 @@ impl Style {
     /// Set vertical padding (top + bottom) from a spacing scale key.
     #[must_use]
     pub fn py(mut self, key: f32) -> Self {
-        let val = tokens::spacing(key);
+        let val = LengthPercent::Px(tokens::spacing(key));
         self.padding.top = Some(val);
         self.padding.bottom = Some(val);
         self
@@ -48,42 +51,49 @@ impl Style {
     /// Set top padding from a spacing scale key.
     #[must_use]
     pub fn pt(mut self, key: f32) -> Self {
-        self.padding.top = Some(tokens::spacing(key));
+        self.padding.top = Some(LengthPercent::Px(tokens::spacing(key)));
         self
     }
 
     /// Set right padding from a spacing scale key.
     #[must_use]
     pub fn pr(mut self, key: f32) -> Self {
-        self.padding.right = Some(tokens::spacing(key));
+        self.padding.right = Some(LengthPercent::Px(tokens::spacing(key)));
         self
     }
 
     /// Set bottom padding from a spacing scale key.
     #[must_use]
     pub fn pb(mut self, key: f32) -> Self {
-        self.padding.bottom = Some(tokens::spacing(key));
+        self.padding.bottom = Some(LengthPercent::Px(tokens::spacing(key)));
         self
     }
 
     /// Set left padding from a spacing scale key.
     #[must_use]
     pub fn pl(mut self, key: f32) -> Self {
-        self.padding.left = Some(tokens::spacing(key));
+        self.padding.left = Some(LengthPercent::Px(tokens::spacing(key)));
+        self
+    }
+
+    /// Set all padding to a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn p_pct(mut self, fraction: f32) -> Self {
+        self.padding = Edges::all(LengthPercent::Percent(fraction));
         self
     }
 
     /// Set all margin from a spacing scale key (`key * 4.0` px).
     #[must_use]
     pub fn m(mut self, key: f32) -> Self {
-        self.margin = Edges::all(tokens::spacing(key));
+        self.margin = Edges::all(Length::Px(tokens::spacing(key)));
         self
     }
 
     /// Set horizontal margin (left + right) from a spacing scale key.
     #[must_use]
     pub fn mx(mut self, key: f32) -> Self {
-        let val = tokens::spacing(key);
+        let val = Length::Px(tokens::spacing(key));
         self.margin.left = Some(val);
         self.margin.right = Some(val);
         self
@@ -92,7 +102,7 @@ impl Style {
     /// Set vertical margin (top + bottom) from a spacing scale key.
     #[must_use]
     pub fn my(mut self, key: f32) -> Self {
-        let val = tokens::spacing(key);
+        let val = Length::Px(tokens::spacing(key));
         self.margin.top = Some(val);
         self.margin.bottom = Some(val);
         self
@@ -101,28 +111,120 @@ impl Style {
     /// Set top margin from a spacing scale key.
     #[must_use]
     pub fn mt(mut self, key: f32) -> Self {
-        self.margin.top = Some(tokens::spacing(key));
+        self.margin.top = Some(Length::Px(tokens::spacing(key)));
         self
     }
 
     /// Set right margin from a spacing scale key.
     #[must_use]
     pub fn mr(mut self, key: f32) -> Self {
-        self.margin.right = Some(tokens::spacing(key));
+        self.margin.right = Some(Length::Px(tokens::spacing(key)));
         self
     }
 
     /// Set bottom margin from a spacing scale key.
     #[must_use]
     pub fn mb(mut self, key: f32) -> Self {
-        self.margin.bottom = Some(tokens::spacing(key));
+        self.margin.bottom = Some(Length::Px(tokens::spacing(key)));
         self
     }
 
     /// Set left margin from a spacing scale key.
     #[must_use]
     pub fn ml(mut self, key: f32) -> Self {
-        self.margin.left = Some(tokens::spacing(key));
+        self.margin.left = Some(Length::Px(tokens::spacing(key)));
+        self
+    }
+
+    /// Set all margins to `auto` (centers the element in its flex container).
+    #[must_use]
+    pub fn margin_auto(mut self) -> Self {
+        self.margin = Edges::all(Length::Auto);
+        self
+    }
+
+    /// Set horizontal margins (left + right) to `auto` (centers horizontally).
+    #[must_use]
+    pub fn mx_auto(mut self) -> Self {
+        self.margin.left = Some(Length::Auto);
+        self.margin.right = Some(Length::Auto);
+        self
+    }
+
+    /// Set vertical margins (top + bottom) to `auto` (centers vertically).
+    #[must_use]
+    pub fn my_auto(mut self) -> Self {
+        self.margin.top = Some(Length::Auto);
+        self.margin.bottom = Some(Length::Auto);
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Display & Position
+// ---------------------------------------------------------------------------
+
+impl Style {
+    /// Set the display mode.
+    #[must_use]
+    pub const fn display(mut self, display: Display) -> Self {
+        self.display = Some(display);
+        self
+    }
+
+    /// Hide the element from layout entirely.
+    #[must_use]
+    pub const fn hidden(mut self) -> Self {
+        self.display = Some(Display::None);
+        self
+    }
+
+    /// Set the positioning scheme.
+    #[must_use]
+    pub const fn position(mut self, position: Position) -> Self {
+        self.position = Some(position);
+        self
+    }
+
+    /// Set the positioning to absolute.
+    #[must_use]
+    pub const fn absolute(mut self) -> Self {
+        self.position = Some(Position::Absolute);
+        self
+    }
+
+    /// Set inset (top, right, bottom, left) for positioned elements.
+    #[must_use]
+    pub fn inset_all(mut self, px: f32) -> Self {
+        self.inset = Edges::all(Length::Px(px));
+        self
+    }
+
+    /// Set top inset.
+    #[must_use]
+    pub fn inset_top(mut self, px: f32) -> Self {
+        self.inset.top = Some(Length::Px(px));
+        self
+    }
+
+    /// Set right inset.
+    #[must_use]
+    pub fn inset_right(mut self, px: f32) -> Self {
+        self.inset.right = Some(Length::Px(px));
+        self
+    }
+
+    /// Set bottom inset.
+    #[must_use]
+    pub fn inset_bottom(mut self, px: f32) -> Self {
+        self.inset.bottom = Some(Length::Px(px));
+        self
+    }
+
+    /// Set left inset.
+    #[must_use]
+    pub fn inset_left(mut self, px: f32) -> Self {
+        self.inset.left = Some(Length::Px(px));
         self
     }
 }
@@ -135,50 +237,114 @@ impl Style {
     /// Set explicit width in pixels.
     #[must_use]
     pub fn w(mut self, px: f32) -> Self {
-        self.width = Some(px);
+        self.width = Some(Length::Px(px));
+        self
+    }
+
+    /// Set explicit width as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn w_pct(mut self, fraction: f32) -> Self {
+        self.width = Some(Length::Percent(fraction));
+        self
+    }
+
+    /// Set explicit width to `auto` (layout-engine-decided).
+    #[must_use]
+    pub fn w_auto(mut self) -> Self {
+        self.width = Some(Length::Auto);
         self
     }
 
     /// Set explicit height in pixels.
     #[must_use]
     pub fn h(mut self, px: f32) -> Self {
-        self.height = Some(px);
+        self.height = Some(Length::Px(px));
+        self
+    }
+
+    /// Set explicit height as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn h_pct(mut self, fraction: f32) -> Self {
+        self.height = Some(Length::Percent(fraction));
+        self
+    }
+
+    /// Set explicit height to `auto`.
+    #[must_use]
+    pub fn h_auto(mut self) -> Self {
+        self.height = Some(Length::Auto);
         self
     }
 
     /// Set both width and height in pixels.
     #[must_use]
     pub fn size(mut self, px: f32) -> Self {
-        self.width = Some(px);
-        self.height = Some(px);
+        self.width = Some(Length::Px(px));
+        self.height = Some(Length::Px(px));
         self
     }
 
     /// Set minimum width in pixels.
     #[must_use]
     pub fn min_w(mut self, px: f32) -> Self {
-        self.min_width = Some(px);
+        self.min_width = Some(Length::Px(px));
+        self
+    }
+
+    /// Set minimum width as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn min_w_pct(mut self, fraction: f32) -> Self {
+        self.min_width = Some(Length::Percent(fraction));
         self
     }
 
     /// Set minimum height in pixels.
     #[must_use]
     pub fn min_h(mut self, px: f32) -> Self {
-        self.min_height = Some(px);
+        self.min_height = Some(Length::Px(px));
+        self
+    }
+
+    /// Set minimum height as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn min_h_pct(mut self, fraction: f32) -> Self {
+        self.min_height = Some(Length::Percent(fraction));
         self
     }
 
     /// Set maximum width in pixels.
     #[must_use]
     pub fn max_w(mut self, px: f32) -> Self {
-        self.max_width = Some(px);
+        self.max_width = Some(Length::Px(px));
+        self
+    }
+
+    /// Set maximum width as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn max_w_pct(mut self, fraction: f32) -> Self {
+        self.max_width = Some(Length::Percent(fraction));
         self
     }
 
     /// Set maximum height in pixels.
     #[must_use]
     pub fn max_h(mut self, px: f32) -> Self {
-        self.max_height = Some(px);
+        self.max_height = Some(Length::Px(px));
+        self
+    }
+
+    /// Set maximum height as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn max_h_pct(mut self, fraction: f32) -> Self {
+        self.max_height = Some(Length::Percent(fraction));
+        self
+    }
+
+    /// Set the aspect ratio (`width / height`). Taffy honors this when exactly
+    /// one of `width` / `height` is constrained.
+    #[must_use]
+    pub fn aspect(mut self, ratio: f32) -> Self {
+        self.aspect_ratio = Some(ratio);
         self
     }
 }
@@ -359,21 +525,28 @@ impl Style {
     /// Set gap (both axes) from a spacing scale key.
     #[must_use]
     pub fn gap(mut self, key: f32) -> Self {
-        self.gap = Some(tokens::spacing(key));
+        self.gap = Some(LengthPercent::Px(tokens::spacing(key)));
+        self
+    }
+
+    /// Set gap (both axes) as a fraction of the parent (0.0–1.0).
+    #[must_use]
+    pub fn gap_pct(mut self, fraction: f32) -> Self {
+        self.gap = Some(LengthPercent::Percent(fraction));
         self
     }
 
     /// Set row gap from a spacing scale key.
     #[must_use]
     pub fn row_gap(mut self, key: f32) -> Self {
-        self.row_gap = Some(tokens::spacing(key));
+        self.row_gap = Some(LengthPercent::Px(tokens::spacing(key)));
         self
     }
 
     /// Set column gap from a spacing scale key.
     #[must_use]
     pub fn col_gap(mut self, key: f32) -> Self {
-        self.column_gap = Some(tokens::spacing(key));
+        self.column_gap = Some(LengthPercent::Px(tokens::spacing(key)));
         self
     }
 
@@ -394,7 +567,14 @@ impl Style {
     /// Set flex basis in pixels.
     #[must_use]
     pub fn basis(mut self, px: f32) -> Self {
-        self.flex_basis = Some(px);
+        self.flex_basis = Some(Length::Px(px));
+        self
+    }
+
+    /// Set flex basis as a fraction of the parent's main axis (0.0–1.0).
+    #[must_use]
+    pub fn basis_pct(mut self, fraction: f32) -> Self {
+        self.flex_basis = Some(Length::Percent(fraction));
         self
     }
 }
@@ -959,47 +1139,53 @@ mod tests {
     #[test]
     fn p_sets_all_padding() {
         let s = Style::default().p(4.0);
-        assert_eq!(s.padding, Edges::all(16.0));
+        assert_eq!(s.padding, Edges::all(LengthPercent::Px(16.0)));
     }
 
     #[test]
     fn px_sets_horizontal_padding() {
         let s = Style::default().px(2.0);
-        assert_eq!(s.padding.left, Some(8.0));
-        assert_eq!(s.padding.right, Some(8.0));
+        assert_eq!(s.padding.left, Some(LengthPercent::Px(8.0)));
+        assert_eq!(s.padding.right, Some(LengthPercent::Px(8.0)));
         assert_eq!(s.padding.top, None);
     }
 
     #[test]
     fn py_sets_vertical_padding() {
         let s = Style::default().py(3.0);
-        assert_eq!(s.padding.top, Some(12.0));
-        assert_eq!(s.padding.bottom, Some(12.0));
+        assert_eq!(s.padding.top, Some(LengthPercent::Px(12.0)));
+        assert_eq!(s.padding.bottom, Some(LengthPercent::Px(12.0)));
         assert_eq!(s.padding.left, None);
     }
 
     #[test]
     fn individual_padding_methods() {
         let s = Style::default().pt(1.0).pr(2.0).pb(3.0).pl(4.0);
-        assert_eq!(s.padding.top, Some(4.0));
-        assert_eq!(s.padding.right, Some(8.0));
-        assert_eq!(s.padding.bottom, Some(12.0));
-        assert_eq!(s.padding.left, Some(16.0));
+        assert_eq!(s.padding.top, Some(LengthPercent::Px(4.0)));
+        assert_eq!(s.padding.right, Some(LengthPercent::Px(8.0)));
+        assert_eq!(s.padding.bottom, Some(LengthPercent::Px(12.0)));
+        assert_eq!(s.padding.left, Some(LengthPercent::Px(16.0)));
+    }
+
+    #[test]
+    fn p_pct_sets_percent_padding() {
+        let s = Style::default().p_pct(0.25);
+        assert_eq!(s.padding, Edges::all(LengthPercent::Percent(0.25)));
     }
 
     #[test]
     fn m_sets_all_margin() {
         let s = Style::default().m(2.0);
-        assert_eq!(s.margin, Edges::all(8.0));
+        assert_eq!(s.margin, Edges::all(Length::Px(8.0)));
     }
 
     #[test]
     fn mx_my_set_axes() {
         let s = Style::default().mx(4.0).my(2.0);
-        assert_eq!(s.margin.left, Some(16.0));
-        assert_eq!(s.margin.right, Some(16.0));
-        assert_eq!(s.margin.top, Some(8.0));
-        assert_eq!(s.margin.bottom, Some(8.0));
+        assert_eq!(s.margin.left, Some(Length::Px(16.0)));
+        assert_eq!(s.margin.right, Some(Length::Px(16.0)));
+        assert_eq!(s.margin.top, Some(Length::Px(8.0)));
+        assert_eq!(s.margin.bottom, Some(Length::Px(8.0)));
     }
 
     // -- Sizing --
@@ -1007,15 +1193,41 @@ mod tests {
     #[test]
     fn w_h_set_dimensions() {
         let s = Style::default().w(100.0).h(200.0);
-        assert_eq!(s.width, Some(100.0));
-        assert_eq!(s.height, Some(200.0));
+        assert_eq!(s.width, Some(Length::Px(100.0)));
+        assert_eq!(s.height, Some(Length::Px(200.0)));
+    }
+
+    #[test]
+    fn w_pct_sets_percent_length() {
+        let s = Style::default().w_pct(0.5);
+        assert_eq!(s.width, Some(Length::Percent(0.5)));
+    }
+
+    #[test]
+    fn w_auto_sets_auto_length() {
+        let s = Style::default().w_auto();
+        assert_eq!(s.width, Some(Length::Auto));
+    }
+
+    #[test]
+    fn h_pct_and_h_auto() {
+        let s = Style::default().h_pct(0.75);
+        assert_eq!(s.height, Some(Length::Percent(0.75)));
+        let s = Style::default().h_auto();
+        assert_eq!(s.height, Some(Length::Auto));
+    }
+
+    #[test]
+    fn aspect_method_sets_field() {
+        let s = Style::default().aspect(16.0 / 9.0);
+        assert_eq!(s.aspect_ratio, Some(16.0 / 9.0));
     }
 
     #[test]
     fn size_sets_both() {
         let s = Style::default().size(50.0);
-        assert_eq!(s.width, Some(50.0));
-        assert_eq!(s.height, Some(50.0));
+        assert_eq!(s.width, Some(Length::Px(50.0)));
+        assert_eq!(s.height, Some(Length::Px(50.0)));
     }
 
     #[test]
@@ -1025,10 +1237,17 @@ mod tests {
             .min_h(20.0)
             .max_w(300.0)
             .max_h(400.0);
-        assert_eq!(s.min_width, Some(10.0));
-        assert_eq!(s.min_height, Some(20.0));
-        assert_eq!(s.max_width, Some(300.0));
-        assert_eq!(s.max_height, Some(400.0));
+        assert_eq!(s.min_width, Some(Length::Px(10.0)));
+        assert_eq!(s.min_height, Some(Length::Px(20.0)));
+        assert_eq!(s.max_width, Some(Length::Px(300.0)));
+        assert_eq!(s.max_height, Some(Length::Px(400.0)));
+    }
+
+    #[test]
+    fn min_max_pct_dimensions() {
+        let s = Style::default().min_w_pct(0.1).max_w_pct(0.9);
+        assert_eq!(s.min_width, Some(Length::Percent(0.1)));
+        assert_eq!(s.max_width, Some(Length::Percent(0.9)));
     }
 
     // -- Flex layout --
@@ -1113,14 +1332,20 @@ mod tests {
     #[test]
     fn gap_uses_spacing_scale() {
         let s = Style::default().gap(4.0);
-        assert_eq!(s.gap, Some(16.0));
+        assert_eq!(s.gap, Some(LengthPercent::Px(16.0)));
+    }
+
+    #[test]
+    fn gap_pct_sets_percent() {
+        let s = Style::default().gap_pct(0.1);
+        assert_eq!(s.gap, Some(LengthPercent::Percent(0.1)));
     }
 
     #[test]
     fn row_col_gap() {
         let s = Style::default().row_gap(2.0).col_gap(3.0);
-        assert_eq!(s.row_gap, Some(8.0));
-        assert_eq!(s.column_gap, Some(12.0));
+        assert_eq!(s.row_gap, Some(LengthPercent::Px(8.0)));
+        assert_eq!(s.column_gap, Some(LengthPercent::Px(12.0)));
     }
 
     #[test]
@@ -1128,7 +1353,13 @@ mod tests {
         let s = Style::default().grow(1.0).shrink(0.0).basis(200.0);
         assert_eq!(s.flex_grow, Some(1.0));
         assert_eq!(s.flex_shrink, Some(0.0));
-        assert_eq!(s.flex_basis, Some(200.0));
+        assert_eq!(s.flex_basis, Some(Length::Px(200.0)));
+    }
+
+    #[test]
+    fn basis_pct_sets_percent_basis() {
+        let s = Style::default().basis_pct(0.5);
+        assert_eq!(s.flex_basis, Some(Length::Percent(0.5)));
     }
 
     // -- Color --
@@ -1406,7 +1637,7 @@ mod tests {
     #[test]
     fn apply_always_applies() {
         let s = Style::default().apply(|s| s.p(4.0).bg_white());
-        assert_eq!(s.padding, Edges::all(16.0));
+        assert_eq!(s.padding, Edges::all(LengthPercent::Px(16.0)));
         assert_eq!(s.background, Some(Color::WHITE));
     }
 
@@ -1517,8 +1748,8 @@ mod tests {
             .text_slate(900);
 
         assert_eq!(s.flex_direction, Some(FlexDirection::Column));
-        assert_eq!(s.padding, Edges::all(16.0));
-        assert_eq!(s.gap, Some(8.0));
+        assert_eq!(s.padding, Edges::all(LengthPercent::Px(16.0)));
+        assert_eq!(s.gap, Some(LengthPercent::Px(8.0)));
         assert_eq!(s.background, Some(Color::WHITE));
         assert_eq!(s.border_radius, Corners::all(8.0));
         assert!(s.shadow.is_some());
@@ -1532,15 +1763,15 @@ mod tests {
     #[test]
     fn p_after_px_overrides_horizontal() {
         let s = Style::default().px(4.0).p(2.0);
-        let val = crate::tokens::spacing(2.0);
+        let val = LengthPercent::Px(crate::tokens::spacing(2.0));
         assert_eq!(s.padding, Edges::all(val));
     }
 
     #[test]
     fn px_after_p_overrides_horizontal_only() {
         let s = Style::default().p(2.0).px(4.0);
-        let p_val = crate::tokens::spacing(2.0);
-        let px_val = crate::tokens::spacing(4.0);
+        let p_val = LengthPercent::Px(crate::tokens::spacing(2.0));
+        let px_val = LengthPercent::Px(crate::tokens::spacing(4.0));
         assert_eq!(s.padding.top, Some(p_val));
         assert_eq!(s.padding.bottom, Some(p_val));
         assert_eq!(s.padding.left, Some(px_val));

@@ -221,8 +221,8 @@ fn theme_showcase_example_builds_valid_tree() {
             el("Swatch", cx)
                 .style(Style {
                     background: Some(color),
-                    width: Some(32.0),
-                    height: Some(32.0),
+                    width: Some(Length::Px(32.0)),
+                    height: Some(Length::Px(32.0)),
                     border_radius: Corners::all(4.0),
                     ..Style::default()
                 })
@@ -382,8 +382,8 @@ fn dashboard_example_builds_valid_tree() {
                         );
                     })
                     .style(Style {
-                        width: Some(200.0),
-                        height: Some(100.0),
+                        width: Some(Length::Px(200.0)),
+                        height: Some(Length::Px(100.0)),
                         ..Style::default()
                     })
                     .build(cx)

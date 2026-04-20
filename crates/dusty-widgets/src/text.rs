@@ -95,6 +95,7 @@ mod tests {
     use dusty_core::node::TextContent as NodeTextContent;
     use dusty_core::Element;
     use dusty_reactive::{create_scope, create_signal, dispose_runtime, initialize_runtime};
+    use dusty_style::Length;
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
@@ -162,13 +163,13 @@ mod tests {
         with_scope(|cx| {
             let node = Text::new("test")
                 .style(Style {
-                    width: Some(100.0),
+                    width: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(100.0));
+            assert_eq!(style.width, Some(Length::Px(100.0)));
         });
     }
 }

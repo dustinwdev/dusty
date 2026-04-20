@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use dusty_core::Node;
-use dusty_style::FontStyle;
+use dusty_style::{FontStyle, InteractionState};
 use smallvec::SmallVec;
 use taffy::{AvailableSpace, NodeId, TaffyTree};
 
@@ -32,7 +32,7 @@ struct TextNodeContext {
 ///
 /// ```
 /// use dusty_core::{Node, Element, el, text};
-/// use dusty_style::{Style, FontStyle};
+/// use dusty_style::{Style, FontStyle, Length};
 /// use dusty_layout::{compute_layout, TextMeasure};
 /// use dusty_reactive::{initialize_runtime, create_scope, dispose_runtime};
 ///
@@ -46,7 +46,7 @@ struct TextNodeContext {
 /// initialize_runtime();
 /// create_scope(|cx| {
 ///     let node = el("Root", cx)
-///         .style(Style { width: Some(400.0), height: Some(300.0), ..Style::default() })
+///         .style(Style { width: Some(Length::Px(400.0)), height: Some(Length::Px(300.0)), ..Style::default() })
 ///         .build_node();
 ///     let result = compute_layout(&node, 400.0, 300.0, &Mock).unwrap();
 ///     assert_eq!(result.len(), 1);
@@ -72,7 +72,7 @@ pub fn compute_layout(
 ///
 /// ```
 /// use dusty_core::{Node, Element, el, text};
-/// use dusty_style::{Style, FontStyle};
+/// use dusty_style::{Style, FontStyle, Length};
 /// use dusty_layout::{LayoutEngine, TextMeasure};
 /// use dusty_reactive::{initialize_runtime, create_scope, dispose_runtime};
 ///
@@ -87,7 +87,7 @@ pub fn compute_layout(
 /// create_scope(|cx| {
 ///     let mut engine = LayoutEngine::new();
 ///     let node = el("Root", cx)
-///         .style(Style { width: Some(400.0), height: Some(300.0), ..Style::default() })
+///         .style(Style { width: Some(Length::Px(400.0)), height: Some(Length::Px(300.0)), ..Style::default() })
 ///         .build_node();
 ///     let result = engine.compute(&node, 400.0, 300.0, &Mock).unwrap();
 ///     assert_eq!(result.len(), 1);
@@ -231,13 +231,35 @@ impl TreeBuilder<'_> {
 
                 // Downcast style; `()` means no style was set, so use default.
                 // Any other non-Style type is a programmer error.
-                let dusty_style = if el.style().is::<()>() {
+                let raw_style = if el.style().is::<()>() {
                     dusty_style::Style::default()
                 } else {
                     el.style()
                         .downcast_ref::<dusty_style::Style>()
                         .cloned()
                         .ok_or(LayoutError::StyleDowncastFailed)?
+                };
+
+                // Resolve interaction state (disabled) for layout purposes.
+                // Hover/focus/active resolution deferred until state tracking
+                // is implemented in the app runner.
+                let is_disabled = el
+                    .attr("disabled")
+                    .and_then(|v| {
+                        if let dusty_core::AttributeValue::Bool(b) = v {
+                            Some(*b)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(false);
+                let dusty_style = if is_disabled {
+                    raw_style.resolve(&InteractionState {
+                        disabled: true,
+                        ..InteractionState::default()
+                    })
+                } else {
+                    raw_style
                 };
 
                 let taffy_style = to_taffy_style(&dusty_style);
@@ -340,7 +362,7 @@ mod tests {
     use super::*;
     use dusty_core::{el, text, ComponentNode};
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-    use dusty_style::Style;
+    use dusty_style::{Length, LengthPercent, Style};
 
     struct MockMeasure;
     impl TextMeasure for MockMeasure {
@@ -373,8 +395,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Box", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -423,8 +445,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Row", cx)
                 .style(Style {
-                    width: Some(300.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(300.0)),
+                    height: Some(Length::Px(100.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Row),
                     ..Style::default()
                 })
@@ -476,15 +498,15 @@ mod tests {
         with_scope(|cx| {
             let node = el("Col", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(200.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Column),
                     ..Style::default()
                 })
                 .child(
                     el("A", cx)
                         .style(Style {
-                            height: Some(50.0),
+                            height: Some(Length::Px(50.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -492,7 +514,7 @@ mod tests {
                 .child(
                     el("B", cx)
                         .style(Style {
-                            height: Some(50.0),
+                            height: Some(Length::Px(50.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -515,25 +537,25 @@ mod tests {
         with_scope(|cx| {
             let node = el("Outer", cx)
                 .style(Style {
-                    width: Some(400.0),
-                    height: Some(400.0),
-                    padding: dusty_style::Edges::all(20.0),
+                    width: Some(Length::Px(400.0)),
+                    height: Some(Length::Px(400.0)),
+                    padding: dusty_style::Edges::all(dusty_style::LengthPercent::Px(20.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Column),
                     ..Style::default()
                 })
                 .child(
                     el("Inner", cx)
                         .style(Style {
-                            width: Some(200.0),
-                            height: Some(100.0),
-                            padding: dusty_style::Edges::all(10.0),
+                            width: Some(Length::Px(200.0)),
+                            height: Some(Length::Px(100.0)),
+                            padding: dusty_style::Edges::all(dusty_style::LengthPercent::Px(10.0)),
                             ..Style::default()
                         })
                         .child(
                             el("Leaf", cx)
                                 .style(Style {
-                                    width: Some(50.0),
-                                    height: Some(50.0),
+                                    width: Some(Length::Px(50.0)),
+                                    height: Some(Length::Px(50.0)),
                                     ..Style::default()
                                 })
                                 .build_node(),
@@ -563,17 +585,17 @@ mod tests {
         with_scope(|cx| {
             let node = el("Row", cx)
                 .style(Style {
-                    width: Some(300.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(300.0)),
+                    height: Some(Length::Px(100.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Row),
-                    gap: Some(10.0),
+                    gap: Some(LengthPercent::Px(10.0)),
                     ..Style::default()
                 })
                 .child(
                     el("A", cx)
                         .style(Style {
-                            width: Some(100.0),
-                            height: Some(100.0),
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -581,8 +603,8 @@ mod tests {
                 .child(
                     el("B", cx)
                         .style(Style {
-                            width: Some(100.0),
-                            height: Some(100.0),
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
                             ..Style::default()
                         })
                         .build_node(),
@@ -604,15 +626,15 @@ mod tests {
             let frag = Node::Fragment(vec![
                 el("A", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
                 el("B", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -620,8 +642,8 @@ mod tests {
 
             let node = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Row),
                     ..Style::default()
                 })
@@ -644,8 +666,8 @@ mod tests {
         with_scope(|cx| {
             let inner = el("Inner", cx)
                 .style(Style {
-                    width: Some(80.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(80.0)),
+                    height: Some(Length::Px(40.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -657,8 +679,8 @@ mod tests {
 
             let node = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child_node(comp)
@@ -675,8 +697,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Row", cx)
                 .style(Style {
-                    width: Some(300.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(300.0)),
+                    height: Some(Length::Px(100.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Row),
                     ..Style::default()
                 })
@@ -722,15 +744,15 @@ mod tests {
             let node = Node::Fragment(vec![
                 el("A", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
                 el("B", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         ..Style::default()
                     })
                     .build_node(),
@@ -751,17 +773,22 @@ mod tests {
         with_scope(|cx| {
             let node = el("Container", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(200.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
                     flex_direction: Some(dusty_style::FlexDirection::Column),
                     ..Style::default()
                 })
                 .child(
                     el("Child", cx)
                         .style(Style {
-                            width: Some(100.0),
-                            height: Some(50.0),
-                            margin: dusty_style::Edges::new(10.0, 0.0, 0.0, 20.0),
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(50.0)),
+                            margin: dusty_style::Edges::new(
+                                dusty_style::Length::Px(10.0),
+                                dusty_style::Length::Px(0.0),
+                                dusty_style::Length::Px(0.0),
+                                dusty_style::Length::Px(20.0),
+                            ),
                             ..Style::default()
                         })
                         .build_node(),
@@ -783,8 +810,8 @@ mod tests {
             // First compute
             let node1 = el("Box", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -794,8 +821,8 @@ mod tests {
             // Second compute reuses engine
             let node2 = el("Box2", cx)
                 .style(Style {
-                    width: Some(300.0),
-                    height: Some(150.0),
+                    width: Some(Length::Px(300.0)),
+                    height: Some(Length::Px(150.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -812,8 +839,8 @@ mod tests {
 
             let node = el("A", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();

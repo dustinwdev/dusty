@@ -3,7 +3,8 @@ use dusty_core::event::{ClickEvent, EventContext};
 use dusty_core::node::{text, text_dynamic, ComponentNode, Node, TextNode};
 use dusty_core::view::View;
 use dusty_reactive::{Scope, Signal};
-use dusty_style::Style;
+use dusty_style::theme::use_theme;
+use dusty_style::{AlignItems, Corners, Edges, FlexDirection, Length, LengthPercent, Style};
 
 use crate::common::LabelContent;
 
@@ -89,21 +90,53 @@ impl<V: PartialEq + Clone + 'static> Radio<V> {
 
 impl<V: PartialEq + Clone + 'static> View for Radio<V> {
     fn build(self, cx: Scope) -> Node {
-        let base = Style::default();
+        let theme = use_theme();
 
-        let merged = if let Some(user) = &self.user_style {
-            base.merge(user)
+        // Container style: row layout with gap
+        let container_base = Style {
+            flex_direction: Some(FlexDirection::Row),
+            gap: Some(LengthPercent::Px(8.0)),
+            align_items: Some(AlignItems::Center),
+            ..Style::default()
+        };
+
+        let container_merged = if let Some(user) = &self.user_style {
+            container_base.merge(user)
         } else {
-            base
+            container_base
+        };
+
+        let container_styled = if self.disabled {
+            container_merged.merge(&Style {
+                opacity: Some(0.5),
+                ..Style::default()
+            })
+        } else {
+            container_merged
+        };
+
+        // Indicator style: circle with border
+        let indicator_style = Style {
+            width: Some(Length::Px(20.0)),
+            height: Some(Length::Px(20.0)),
+            border_width: Edges::all(1.0),
+            border_radius: Corners::all(9999.0),
+            border_color: Some(theme.border),
+            background: Some(theme.surface),
+            ..Style::default()
         };
 
         let is_checked = self.group.with(|g| *g == self.value);
 
+        // Build indicator child element
+        let indicator = el("RadioIndicator", cx).style(indicator_style).build_node();
+
         let mut builder = el("Radio", cx)
             .attr("checked", is_checked)
             .attr("disabled", self.disabled)
-            .style(merged)
-            .data(self.group);
+            .style(container_styled)
+            .data(self.group)
+            .child_node(indicator);
 
         if let Some(label_content) = self.label {
             let label_child: TextNode = match label_content {
@@ -119,7 +152,7 @@ impl<V: PartialEq + Clone + 'static> View for Radio<V> {
             let group = self.group;
             let on_select = self.on_select;
             builder = builder.on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
-                group.set(value.clone());
+                group.set_if_changed(value.clone());
                 if let Some(ref cb) = on_select {
                     cb(&value);
                 }
@@ -190,11 +223,12 @@ mod tests {
             let group = create_signal(0i32);
             let node = Radio::new(1, group).label("Option A").build(cx);
             let el = extract_element(&node);
-            assert_eq!(el.children().len(), 1);
-            if let Node::Text(text_node) = &el.children()[0] {
+            // Container has indicator + label = 2 children
+            assert_eq!(el.children().len(), 2);
+            if let Node::Text(text_node) = &el.children()[1] {
                 assert_eq!(text_node.current_text(), "Option A");
             } else {
-                panic!("expected Text child");
+                panic!("expected Text child at index 1");
             }
         });
     }
@@ -205,13 +239,13 @@ mod tests {
             let group = create_signal(0i32);
             let node = Radio::new(1, group)
                 .style(Style {
-                    width: Some(20.0),
+                    gap: Some(LengthPercent::Px(12.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(20.0));
+            assert_eq!(style.gap, Some(LengthPercent::Px(12.0)));
         });
     }
 
@@ -225,6 +259,71 @@ mod tests {
                 el.attr("label"),
                 Some(&AttributeValue::String("Option A".into()))
             );
+        });
+    }
+
+    #[test]
+    fn radio_has_container_with_row_layout() {
+        with_scope(|cx| {
+            let group = create_signal(0i32);
+            let node = Radio::new(1, group).build(cx);
+            let el = extract_element(&node);
+            let style = el.style().downcast_ref::<Style>().unwrap();
+            assert_eq!(style.flex_direction, Some(FlexDirection::Row));
+            assert_eq!(style.gap, Some(LengthPercent::Px(8.0)));
+            assert_eq!(style.align_items, Some(AlignItems::Center));
+        });
+    }
+
+    #[test]
+    fn radio_indicator_has_circular_border() {
+        with_scope(|cx| {
+            let group = create_signal(0i32);
+            let node = Radio::new(1, group).build(cx);
+            let el = extract_element(&node);
+            if let Node::Element(indicator) = &el.children()[0] {
+                assert_eq!(indicator.name(), "RadioIndicator");
+                let style = indicator.style().downcast_ref::<Style>().unwrap();
+                assert_eq!(style.width, Some(Length::Px(20.0)));
+                assert_eq!(style.height, Some(Length::Px(20.0)));
+                assert_eq!(style.border_width, Edges::all(1.0));
+                assert_eq!(style.border_radius, Corners::all(9999.0));
+                assert!(style.border_color.is_some());
+                assert!(style.background.is_some());
+            } else {
+                panic!("expected Element child for indicator");
+            }
+        });
+    }
+
+    #[test]
+    fn radio_no_label_has_one_child() {
+        with_scope(|cx| {
+            let group = create_signal(0i32);
+            let node = Radio::new(1, group).build(cx);
+            let el = extract_element(&node);
+            assert_eq!(el.children().len(), 1);
+        });
+    }
+
+    #[test]
+    fn radio_with_label_has_two_children() {
+        with_scope(|cx| {
+            let group = create_signal(0i32);
+            let node = Radio::new(1, group).label("Opt").build(cx);
+            let el = extract_element(&node);
+            assert_eq!(el.children().len(), 2);
+        });
+    }
+
+    #[test]
+    fn radio_disabled_dims_opacity() {
+        with_scope(|cx| {
+            let group = create_signal(0i32);
+            let node = Radio::new(1, group).disabled(true).build(cx);
+            let el = extract_element(&node);
+            let style = el.style().downcast_ref::<Style>().unwrap();
+            assert_eq!(style.opacity, Some(0.5));
         });
     }
 

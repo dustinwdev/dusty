@@ -3,7 +3,8 @@ use dusty_core::event::{ClickEvent, EventContext};
 use dusty_core::node::{text, text_dynamic, ComponentNode, Node, TextNode};
 use dusty_core::view::View;
 use dusty_reactive::{create_signal, Scope, Signal};
-use dusty_style::Style;
+use dusty_style::theme::use_theme;
+use dusty_style::{AlignItems, Corners, Edges, FlexDirection, Length, LengthPercent, Style};
 
 use crate::common::LabelContent;
 
@@ -110,12 +111,40 @@ impl Default for Checkbox {
 
 impl View for Checkbox {
     fn build(self, cx: Scope) -> Node {
-        let base = Style::default();
+        let theme = use_theme();
 
-        let merged = if let Some(user) = &self.user_style {
-            base.merge(user)
+        // Container style: row layout with gap
+        let container_base = Style {
+            flex_direction: Some(FlexDirection::Row),
+            gap: Some(LengthPercent::Px(8.0)),
+            align_items: Some(AlignItems::Center),
+            ..Style::default()
+        };
+
+        let container_merged = if let Some(user) = &self.user_style {
+            container_base.merge(user)
         } else {
-            base
+            container_base
+        };
+
+        let container_styled = if self.disabled {
+            container_merged.merge(&Style {
+                opacity: Some(0.5),
+                ..Style::default()
+            })
+        } else {
+            container_merged
+        };
+
+        // Indicator style: fixed size box with border
+        let indicator_style = Style {
+            width: Some(Length::Px(20.0)),
+            height: Some(Length::Px(20.0)),
+            border_width: Edges::all(1.0),
+            border_radius: Corners::all(4.0),
+            border_color: Some(theme.border),
+            background: Some(theme.surface),
+            ..Style::default()
         };
 
         let signal = match self.source {
@@ -123,11 +152,17 @@ impl View for Checkbox {
             CheckedSource::Controlled(sig) => sig,
         };
 
+        // Build indicator child element
+        let indicator = el("CheckboxIndicator", cx)
+            .style(indicator_style)
+            .build_node();
+
         let mut builder = el("Checkbox", cx)
             .attr("checked", signal.get())
             .attr("disabled", self.disabled)
-            .style(merged)
-            .data(signal);
+            .style(container_styled)
+            .data(signal)
+            .child_node(indicator);
 
         if let Some(label_content) = self.label {
             let label_child: TextNode = match label_content {
@@ -143,7 +178,7 @@ impl View for Checkbox {
             builder = builder.on_click(move |_ctx: &EventContext, _e: &ClickEvent| {
                 let current = signal.get();
                 let new_val = !current;
-                signal.set(new_val);
+                signal.set_if_changed(new_val);
                 if let Some(ref cb) = on_change {
                     cb(new_val);
                 }
@@ -245,11 +280,12 @@ mod tests {
         with_scope(|cx| {
             let node = Checkbox::new().label("Accept terms").build(cx);
             let el = extract_element(&node);
-            assert_eq!(el.children().len(), 1);
-            if let Node::Text(text_node) = &el.children()[0] {
+            // Container has indicator + label text = 2 children
+            assert_eq!(el.children().len(), 2);
+            if let Node::Text(text_node) = &el.children()[1] {
                 assert_eq!(text_node.current_text(), "Accept terms");
             } else {
-                panic!("expected Text child");
+                panic!("expected Text child at index 1");
             }
         });
     }
@@ -259,13 +295,13 @@ mod tests {
         with_scope(|cx| {
             let node = Checkbox::new()
                 .style(Style {
-                    width: Some(20.0),
+                    gap: Some(LengthPercent::Px(12.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(20.0));
+            assert_eq!(style.gap, Some(LengthPercent::Px(12.0)));
         });
     }
 
@@ -278,6 +314,83 @@ mod tests {
                 el.attr("label"),
                 Some(&AttributeValue::String("Accept terms".into()))
             );
+        });
+    }
+
+    #[test]
+    fn checkbox_has_container_with_row_layout() {
+        with_scope(|cx| {
+            let node = Checkbox::new().build(cx);
+            let el = extract_element(&node);
+            let style = el.style().downcast_ref::<Style>().unwrap();
+            assert_eq!(style.flex_direction, Some(FlexDirection::Row));
+            assert_eq!(style.gap, Some(LengthPercent::Px(8.0)));
+            assert_eq!(style.align_items, Some(AlignItems::Center));
+        });
+    }
+
+    #[test]
+    fn checkbox_indicator_has_border() {
+        with_scope(|cx| {
+            let node = Checkbox::new().build(cx);
+            let el = extract_element(&node);
+            // First child is the indicator element
+            if let Node::Element(indicator) = &el.children()[0] {
+                assert_eq!(indicator.name(), "CheckboxIndicator");
+                let style = indicator.style().downcast_ref::<Style>().unwrap();
+                assert_eq!(style.width, Some(Length::Px(20.0)));
+                assert_eq!(style.height, Some(Length::Px(20.0)));
+                assert_eq!(style.border_width, Edges::all(1.0));
+                assert_eq!(style.border_radius, Corners::all(4.0));
+                assert!(style.border_color.is_some());
+                assert!(style.background.is_some());
+            } else {
+                panic!("expected Element child for indicator");
+            }
+        });
+    }
+
+    #[test]
+    fn checkbox_indicator_uses_theme_colors() {
+        with_scope(|cx| {
+            let theme = use_theme();
+            let node = Checkbox::new().build(cx);
+            let el = extract_element(&node);
+            if let Node::Element(indicator) = &el.children()[0] {
+                let style = indicator.style().downcast_ref::<Style>().unwrap();
+                assert_eq!(style.border_color, Some(theme.border));
+                assert_eq!(style.background, Some(theme.surface));
+            } else {
+                panic!("expected Element child for indicator");
+            }
+        });
+    }
+
+    #[test]
+    fn checkbox_no_label_has_one_child() {
+        with_scope(|cx| {
+            let node = Checkbox::new().build(cx);
+            let el = extract_element(&node);
+            assert_eq!(el.children().len(), 1);
+        });
+    }
+
+    #[test]
+    fn checkbox_with_label_has_two_children() {
+        with_scope(|cx| {
+            let node = Checkbox::new().label("Terms").build(cx);
+            let el = extract_element(&node);
+            assert_eq!(el.children().len(), 2);
+        });
+    }
+
+    #[test]
+    fn checkbox_disabled_dims_opacity() {
+        with_scope(|cx| {
+            let node = Checkbox::new().disabled(true).build(cx);
+            let el = extract_element(&node);
+            let style = el.style().downcast_ref::<Style>().unwrap();
+            assert_eq!(style.opacity, Some(0.5));
         });
     }
 

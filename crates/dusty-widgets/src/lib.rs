@@ -33,7 +33,7 @@ mod toggle;
 #[doc(hidden)]
 pub mod __macro_internals {
     pub use dusty_core::{el, ElementBuilder};
-    pub use dusty_style::{FlexDirection, Style};
+    pub use dusty_style::{AlignItems, FlexDirection, Length, LengthPercent, Style};
 }
 
 pub use button::{Button, ButtonVariant};

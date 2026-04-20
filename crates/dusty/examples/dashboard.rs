@@ -160,8 +160,8 @@ fn main() {
                         }
                     })
                     .style(Style {
-                        width: Some(200.0),
-                        height: Some(100.0),
+                        width: Some(Length::Px(200.0)),
+                        height: Some(Length::Px(100.0)),
                         ..Style::default()
                     })
                     .build(cx)

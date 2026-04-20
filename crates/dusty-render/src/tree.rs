@@ -16,7 +16,8 @@ use std::rc::Rc;
 
 use dusty_core::Node;
 use dusty_layout::{LayoutNodeId, LayoutResult};
-use dusty_style::{Color, FontStyle, Style};
+use dusty_reactive::Signal;
+use dusty_style::{Color, FontStyle, InteractionState, Overflow, Style};
 use dusty_text::{GlyphRasterizer, TextLayout, TextSystem};
 
 use crate::command::CommandEncoder;
@@ -29,6 +30,21 @@ use crate::primitive::{
 
 /// Default foreground (text) color when none is specified.
 const DEFAULT_FOREGROUND: Color = Color::BLACK;
+
+/// Identifies which elements are in hover, focus, or active states
+/// so the render tree can resolve style overrides.
+///
+/// Pass this to [`walk_tree_interactive`] to enable visual feedback
+/// for hover, focus, and active states.
+#[derive(Debug, Clone, Default)]
+pub struct InteractionContext {
+    /// The layout node ID of the element currently under the cursor.
+    pub hovered_id: Option<LayoutNodeId>,
+    /// The layout node ID of the element that currently has focus.
+    pub focused_id: Option<LayoutNodeId>,
+    /// Whether the primary mouse button is currently pressed.
+    pub active: bool,
+}
 
 /// Walks the node tree and emits draw commands.
 ///
@@ -73,18 +89,45 @@ pub fn walk_tree_with_images(
     scale_factor: f32,
     image_cache: Option<&ImageCache>,
 ) -> Vec<DrawCommand> {
+    walk_tree_interactive(
+        root,
+        layout,
+        text_system,
+        glyph_cache,
+        rasterizer,
+        scale_factor,
+        image_cache,
+        InteractionContext::default(),
+    )
+}
+
+/// Walks the node tree with interaction state for hover/focus/active style resolution.
+#[allow(clippy::too_many_arguments)]
+pub fn walk_tree_interactive(
+    root: &Node,
+    layout: &LayoutResult,
+    text_system: &TextSystem,
+    glyph_cache: &mut GlyphCache,
+    rasterizer: &mut GlyphRasterizer,
+    scale_factor: f32,
+    image_cache: Option<&ImageCache>,
+    interaction: InteractionContext,
+) -> Vec<DrawCommand> {
     let mut ctx = WalkContext {
         commands: Vec::new(),
-        encoder: CommandEncoder::new(),
+        encoder: CommandEncoder::with_scale_factor(scale_factor),
         next_id: 0,
         text_system,
         glyph_cache,
         rasterizer,
         scale_factor,
         image_cache,
+        interaction,
+        available_width: None,
+        scroll_offset: (0.0, 0.0),
     };
 
-    ctx.walk_node(root, layout, &FontStyle::default(), DEFAULT_FOREGROUND);
+    ctx.walk_node(root, layout, &FontStyle::default(), DEFAULT_FOREGROUND, 1.0);
     ctx.commands
 }
 
@@ -97,6 +140,14 @@ struct WalkContext<'a> {
     rasterizer: &'a mut GlyphRasterizer,
     scale_factor: f32,
     image_cache: Option<&'a ImageCache>,
+    interaction: InteractionContext,
+    /// Available width for text wrapping, inherited from the nearest
+    /// ancestor element. Text nodes use this instead of their own
+    /// computed width to avoid rounding-induced re-wrapping.
+    available_width: Option<f32>,
+    /// Accumulated scroll offset from ancestor scroll containers.
+    /// Applied to child positions during rendering.
+    scroll_offset: (f32, f32),
 }
 
 impl WalkContext<'_> {
@@ -112,25 +163,50 @@ impl WalkContext<'_> {
         layout: &LayoutResult,
         inherited_font: &FontStyle,
         inherited_fg: Color,
+        inherited_opacity: f32,
     ) {
         match node {
             Node::Element(el) => {
-                self.walk_element(el, layout, inherited_font, inherited_fg);
+                self.walk_element(el, layout, inherited_font, inherited_fg, inherited_opacity);
             }
             Node::Text(text_node) => {
-                self.walk_text(text_node, layout, inherited_font, inherited_fg);
+                self.walk_text(
+                    text_node,
+                    layout,
+                    inherited_font,
+                    inherited_fg,
+                    inherited_opacity,
+                );
             }
             Node::Fragment(children) => {
                 for child in children {
-                    self.walk_node(child, layout, inherited_font, inherited_fg);
+                    self.walk_node(
+                        child,
+                        layout,
+                        inherited_font,
+                        inherited_fg,
+                        inherited_opacity,
+                    );
                 }
             }
             Node::Component(comp) => {
-                self.walk_node(&comp.child, layout, inherited_font, inherited_fg);
+                self.walk_node(
+                    &comp.child,
+                    layout,
+                    inherited_font,
+                    inherited_fg,
+                    inherited_opacity,
+                );
             }
             Node::Dynamic(dn) => {
                 let resolved = dn.current_node();
-                self.walk_node(&resolved, layout, inherited_font, inherited_fg);
+                self.walk_node(
+                    &resolved,
+                    layout,
+                    inherited_font,
+                    inherited_fg,
+                    inherited_opacity,
+                );
             }
         }
     }
@@ -141,16 +217,24 @@ impl WalkContext<'_> {
         layout: &LayoutResult,
         inherited_font: &FontStyle,
         inherited_fg: Color,
+        inherited_opacity: f32,
     ) {
         let layout_id = self.alloc_id();
         let Some(layout_rect) = layout.get(layout_id) else {
             return;
         };
 
-        let render_rect = to_render_rect(layout_rect);
+        // Apply accumulated scroll offset from ancestor scroll containers
+        let adjusted = dusty_layout::Rect {
+            x: layout_rect.x - self.scroll_offset.0,
+            y: layout_rect.y - self.scroll_offset.1,
+            width: layout_rect.width,
+            height: layout_rect.height,
+        };
+        let render_rect = scale_rect(to_render_rect(&adjusted), self.scale_factor);
 
         // Downcast style
-        let dusty_style = if el.style().is::<()>() {
+        let raw_style = if el.style().is::<()>() {
             Style::default()
         } else {
             el.style()
@@ -159,16 +243,31 @@ impl WalkContext<'_> {
                 .unwrap_or_default()
         };
 
+        // Resolve interaction state for rendering.
+        let is_disabled = el
+            .attr("disabled")
+            .and_then(|v| {
+                if let dusty_core::AttributeValue::Bool(b) = v {
+                    Some(*b)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(false);
+        let interaction_state = InteractionState {
+            hovered: self.interaction.hovered_id == Some(layout_id),
+            focused: self.interaction.focused_id == Some(layout_id),
+            active: self.interaction.active && self.interaction.focused_id == Some(layout_id),
+            disabled: is_disabled,
+        };
+        let dusty_style = raw_style.resolve(&interaction_state);
+
         // Merge font for children
         let child_font = inherited_font.merge(&dusty_style.font);
         let child_fg = dusty_style.foreground.unwrap_or(inherited_fg);
 
         // Maybe push clip
-        let pushed_clip = self.encoder.maybe_push_clip(&dusty_style, &render_rect);
-        let has_clip = pushed_clip.is_some();
-        if let Some(clip_cmd) = pushed_clip {
-            self.commands.push(clip_cmd);
-        }
+        let has_clip = self.encoder.maybe_push_clip(&dusty_style, &render_rect);
 
         // Encode element visuals (shadows, rect)
         let element_cmds = self.encoder.encode_element(&dusty_style, &render_rect);
@@ -184,15 +283,42 @@ impl WalkContext<'_> {
             self.walk_canvas_element(el, &render_rect, &dusty_style);
         }
 
-        // Recurse children
+        // Detect scroll container and read scroll offset
+        #[allow(clippy::cast_possible_truncation)]
+        let scroll_offset_delta = if matches!(
+            dusty_style.overflow,
+            Some(Overflow::Scroll | Overflow::Auto)
+        ) {
+            el.custom_data()
+                .downcast_ref::<Signal<(f64, f64)>>()
+                .map_or((0.0, 0.0), |sig| {
+                    let (sx, sy) = sig.get();
+                    (sx as f32, sy as f32)
+                })
+        } else {
+            (0.0, 0.0)
+        };
+
+        // Recurse children — pass this element's logical width so text
+        // nodes can use it as their wrapping constraint instead of their
+        // own intrinsic width (which causes rounding-induced re-wrapping).
+        let parent_width = self.available_width;
+        let parent_scroll = self.scroll_offset;
+        let child_opacity = dusty_style.opacity.unwrap_or(1.0) * inherited_opacity;
+        self.available_width = Some(layout_rect.width);
+        self.scroll_offset = (
+            self.scroll_offset.0 + scroll_offset_delta.0,
+            self.scroll_offset.1 + scroll_offset_delta.1,
+        );
         for child in el.children() {
-            self.walk_node(child, layout, &child_font, child_fg);
+            self.walk_node(child, layout, &child_font, child_fg, child_opacity);
         }
+        self.available_width = parent_width;
+        self.scroll_offset = parent_scroll;
 
         // Pop clip if we pushed one
         if has_clip {
-            let pop = self.encoder.pop_clip();
-            self.commands.push(pop);
+            self.encoder.pop_clip();
         }
     }
 
@@ -281,6 +407,9 @@ impl WalkContext<'_> {
     ) {
         use dusty_widgets_canvas::CanvasCommand as CC;
 
+        // Canvas commands are in logical pixels; scale to physical
+        let s = self.scale_factor;
+
         match cmd {
             CC::Rect {
                 x,
@@ -292,10 +421,10 @@ impl WalkContext<'_> {
             } => {
                 self.commands.push(DrawCommand::Rect(DrawPrimitive {
                     rect: Rect {
-                        x: ox + x,
-                        y: oy + y,
-                        width: *width,
-                        height: *height,
+                        x: ox + x * s,
+                        y: oy + y * s,
+                        width: *width * s,
+                        height: *height * s,
                     },
                     radii: [0.0; 4],
                     fill_color: *color,
@@ -317,14 +446,15 @@ impl WalkContext<'_> {
                 fill: Some(dusty_widgets_canvas::FillStyle::Solid(color)),
                 ..
             } => {
+                let r = *radius * s;
                 self.commands.push(DrawCommand::Rect(DrawPrimitive {
                     rect: Rect {
-                        x: ox + x,
-                        y: oy + y,
-                        width: *width,
-                        height: *height,
+                        x: ox + x * s,
+                        y: oy + y * s,
+                        width: *width * s,
+                        height: *height * s,
                     },
-                    radii: [*radius; 4],
+                    radii: [r; 4],
                     fill_color: *color,
                     border_color: Color::TRANSPARENT,
                     border_widths: [0.0; 4],
@@ -342,14 +472,15 @@ impl WalkContext<'_> {
                 fill: Some(dusty_widgets_canvas::FillStyle::Solid(color)),
                 ..
             } => {
+                let r = *radius * s;
                 self.commands.push(DrawCommand::Rect(DrawPrimitive {
                     rect: Rect {
-                        x: ox + cx - radius,
-                        y: oy + cy - radius,
-                        width: radius * 2.0,
-                        height: radius * 2.0,
+                        x: (*cx - *radius).mul_add(s, ox),
+                        y: (*cy - *radius).mul_add(s, oy),
+                        width: r * 2.0,
+                        height: r * 2.0,
                     },
-                    radii: [*radius; 4],
+                    radii: [r; 4],
                     fill_color: *color,
                     border_color: Color::TRANSPARENT,
                     border_widths: [0.0; 4],
@@ -372,24 +503,40 @@ impl WalkContext<'_> {
         layout: &LayoutResult,
         inherited_font: &FontStyle,
         inherited_fg: Color,
+        inherited_opacity: f32,
     ) {
         let layout_id = self.alloc_id();
         let Some(layout_rect) = layout.get(layout_id) else {
             return;
         };
 
-        let render_rect = to_render_rect(layout_rect);
+        // Apply accumulated scroll offset from ancestor scroll containers
+        let adjusted = dusty_layout::Rect {
+            x: layout_rect.x - self.scroll_offset.0,
+            y: layout_rect.y - self.scroll_offset.1,
+            width: layout_rect.width,
+            height: layout_rect.height,
+        };
+        let logical_rect = to_render_rect(&adjusted);
         let text = text_node.current_text();
 
         if text.is_empty() {
             return;
         }
 
-        let max_width = if render_rect.width > 0.0 {
-            Some(render_rect.width)
-        } else {
-            None
-        };
+        // Use the parent element's width for text wrapping, not the text
+        // node's own computed width. The layout system measures text with
+        // the full available width (e.g., 500px) and then assigns the text
+        // node its intrinsic width (e.g., 121px). Re-constraining to 121px
+        // during rendering causes wrapping due to FP precision differences.
+        let max_width = self.available_width.filter(|&w| w > 0.0).or_else(|| {
+            let w = logical_rect.width;
+            if w > 0.0 {
+                Some(w)
+            } else {
+                None
+            }
+        });
         let Ok(text_layout) = TextLayout::new(self.text_system, &text, inherited_font, max_width)
         else {
             eprintln!("dusty: FontSystem borrow conflict during text layout");
@@ -409,6 +556,11 @@ impl WalkContext<'_> {
             inherited_fg.a,
         ];
 
+        // Glyph positioning in physical pixels
+        let scale = self.scale_factor;
+        let phys_x = logical_rect.x * scale;
+        let phys_y = logical_rect.y * scale;
+
         let mut glyphs = Vec::new();
         let Ok(mut font_system) = self.text_system.font_system_mut() else {
             eprintln!("dusty: FontSystem borrow conflict during glyph rasterization");
@@ -417,7 +569,7 @@ impl WalkContext<'_> {
 
         for run in text_layout.buffer().layout_runs() {
             for layout_glyph in run.glyphs {
-                let physical = layout_glyph.physical((0., 0.), self.scale_factor);
+                let physical = layout_glyph.physical((0., run.line_y), scale);
 
                 let cached = self.glyph_cache.get_or_rasterize(
                     physical.cache_key,
@@ -426,9 +578,8 @@ impl WalkContext<'_> {
                 );
 
                 if let Some(cached) = cached {
-                    let glyph_x = render_rect.x + physical.x as f32 + cached.offset[0] as f32;
-                    let glyph_y =
-                        render_rect.y + run.line_top + physical.y as f32 - cached.offset[1] as f32;
+                    let glyph_x = phys_x + physical.x as f32 + cached.offset[0] as f32;
+                    let glyph_y = phys_y + physical.y as f32 - cached.offset[1] as f32;
 
                     glyphs.push(TextGlyph {
                         x: glyph_x,
@@ -437,7 +588,7 @@ impl WalkContext<'_> {
                         height: cached.size[1] as f32,
                         uv: cached.uv,
                         color: fg_color,
-                        opacity: 1.0,
+                        opacity: inherited_opacity,
                         clip_rect,
                     });
                 }
@@ -460,6 +611,16 @@ const fn to_render_rect(layout_rect: &dusty_layout::Rect) -> Rect {
         y: layout_rect.y,
         width: layout_rect.width,
         height: layout_rect.height,
+    }
+}
+
+/// Scales a rect from logical to physical pixels.
+fn scale_rect(rect: Rect, scale: f32) -> Rect {
+    Rect {
+        x: rect.x * scale,
+        y: rect.y * scale,
+        width: rect.width * scale,
+        height: rect.height * scale,
     }
 }
 
@@ -528,7 +689,7 @@ mod tests {
     use dusty_core::{el, text, ComponentNode};
     use dusty_layout::compute_layout;
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-    use dusty_style::{Color, Edges, Overflow};
+    use dusty_style::{Color, Edges, Length, LengthPercent, Overflow};
 
     struct MockMeasure;
     impl dusty_layout::TextMeasure for MockMeasure {
@@ -557,6 +718,10 @@ mod tests {
     }
 
     fn walk_with_mock(root: &Node, width: f32, height: f32) -> Vec<DrawCommand> {
+        walk_with_mock_scale(root, width, height, 1.0)
+    }
+
+    fn walk_with_mock_scale(root: &Node, width: f32, height: f32, scale: f32) -> Vec<DrawCommand> {
         let layout = compute_layout(root, width, height, &MockMeasure).unwrap();
         let text_system = TextSystem::new();
         let mut glyph_cache = GlyphCache::new(256, 256);
@@ -568,7 +733,7 @@ mod tests {
             &text_system,
             &mut glyph_cache,
             &mut rasterizer,
-            1.0,
+            scale,
         )
     }
 
@@ -577,8 +742,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Box", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(50.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(50.0)),
                     background: Some(Color::WHITE),
                     ..Style::default()
                 })
@@ -620,8 +785,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     background: Some(Color::WHITE),
                     ..Style::default()
                 })
@@ -658,16 +823,16 @@ mod tests {
             let frag = Node::Fragment(vec![
                 el("A", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         background: Some(Color::WHITE),
                         ..Style::default()
                     })
                     .build_node(),
                 el("B", cx)
                     .style(Style {
-                        width: Some(50.0),
-                        height: Some(50.0),
+                        width: Some(Length::Px(50.0)),
+                        height: Some(Length::Px(50.0)),
                         background: Some(Color::BLACK),
                         ..Style::default()
                     })
@@ -676,8 +841,8 @@ mod tests {
 
             let parent = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child_node(frag)
@@ -701,8 +866,8 @@ mod tests {
         with_scope(|cx| {
             let inner = el("Inner", cx)
                 .style(Style {
-                    width: Some(80.0),
-                    height: Some(40.0),
+                    width: Some(Length::Px(80.0)),
+                    height: Some(Length::Px(40.0)),
                     background: Some(Color::WHITE),
                     ..Style::default()
                 })
@@ -715,8 +880,8 @@ mod tests {
 
             let parent = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child_node(comp)
@@ -733,12 +898,12 @@ mod tests {
     }
 
     #[test]
-    fn nested_overflow_hidden_emits_clips() {
+    fn nested_overflow_hidden_bakes_clip_rects() {
         with_scope(|cx| {
             let node = el("Outer", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(200.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
                     overflow: Some(Overflow::Hidden),
                     background: Some(Color::WHITE),
                     ..Style::default()
@@ -746,8 +911,8 @@ mod tests {
                 .child(
                     el("Inner", cx)
                         .style(Style {
-                            width: Some(100.0),
-                            height: Some(100.0),
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
                             overflow: Some(Overflow::Hidden),
                             background: Some(Color::BLACK),
                             ..Style::default()
@@ -758,18 +923,23 @@ mod tests {
 
             let cmds = walk_with_mock(&node, 400.0, 300.0);
 
-            let push_count = cmds
-                .iter()
-                .filter(|c| matches!(c, DrawCommand::PushClip(_)))
-                .count();
-            let pop_count = cmds
-                .iter()
-                .filter(|c| matches!(c, DrawCommand::PopClip))
-                .count();
-
-            assert_eq!(push_count, 2, "should have 2 PushClip commands");
-            assert_eq!(pop_count, 2, "should have 2 PopClip commands");
-            assert_eq!(push_count, pop_count, "push/pop must be balanced");
+            // Inner element should have a clip_rect baked from the outer clip
+            let inner_rect = cmds.iter().find_map(|c| {
+                if let DrawCommand::Rect(prim) = c {
+                    if prim.fill_color == Color::BLACK {
+                        return Some(prim);
+                    }
+                }
+                None
+            });
+            assert!(
+                inner_rect.is_some(),
+                "inner element should produce a Rect command"
+            );
+            assert!(
+                inner_rect.unwrap().clip_rect.is_some(),
+                "inner element should have a clip_rect from the outer overflow:hidden"
+            );
         });
     }
 
@@ -781,8 +951,8 @@ mod tests {
         with_scope(|cx| {
             let node = el("Empty", cx)
                 .style(Style {
-                    width: Some(0.0),
-                    height: Some(0.0),
+                    width: Some(Length::Px(0.0)),
+                    height: Some(Length::Px(0.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -801,26 +971,26 @@ mod tests {
         with_scope(|cx| {
             let node = el("L1", cx)
                 .style(Style {
-                    width: Some(400.0),
-                    height: Some(400.0),
+                    width: Some(Length::Px(400.0)),
+                    height: Some(Length::Px(400.0)),
                     background: Some(Color::WHITE),
-                    padding: Edges::all(10.0),
+                    padding: Edges::all(LengthPercent::Px(10.0)),
                     ..Style::default()
                 })
                 .child(
                     el("L2", cx)
                         .style(Style {
-                            width: Some(300.0),
-                            height: Some(300.0),
+                            width: Some(Length::Px(300.0)),
+                            height: Some(Length::Px(300.0)),
                             background: Some(Color::hex(0xAAAAAA)),
-                            padding: Edges::all(10.0),
+                            padding: Edges::all(LengthPercent::Px(10.0)),
                             ..Style::default()
                         })
                         .child(
                             el("L3", cx)
                                 .style(Style {
-                                    width: Some(200.0),
-                                    height: Some(200.0),
+                                    width: Some(Length::Px(200.0)),
+                                    height: Some(Length::Px(200.0)),
                                     background: Some(Color::BLACK),
                                     ..Style::default()
                                 })
@@ -848,8 +1018,8 @@ mod tests {
             // the walker consumes IDs in the same order.
             let node = el("Root", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .child(text("hello"))
@@ -885,8 +1055,8 @@ mod tests {
                 .attr("src", "photo.png")
                 .attr("sizing_mode", "fill")
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .build_node();
@@ -976,8 +1146,8 @@ mod tests {
 
             let node = el("Canvas", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .data(commands)
@@ -1013,8 +1183,8 @@ mod tests {
             // Wrap in a parent so the canvas gets a non-zero position
             let canvas_node = el("Canvas", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .data(commands)
@@ -1022,9 +1192,9 @@ mod tests {
 
             let parent = el("Root", cx)
                 .style(Style {
-                    width: Some(400.0),
-                    height: Some(300.0),
-                    padding: Edges::all(20.0),
+                    width: Some(Length::Px(400.0)),
+                    height: Some(Length::Px(300.0)),
+                    padding: Edges::all(LengthPercent::Px(20.0)),
                     ..Style::default()
                 })
                 .child_node(canvas_node)
@@ -1064,8 +1234,8 @@ mod tests {
 
             let node = el("Canvas", cx)
                 .style(Style {
-                    width: Some(100.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(100.0)),
+                    height: Some(Length::Px(100.0)),
                     ..Style::default()
                 })
                 .data(commands)
@@ -1089,13 +1259,393 @@ mod tests {
         );
     }
 
+    // -- Scroll offset tests --
+
+    fn extract_rect_positions(cmds: &[DrawCommand]) -> Vec<(f32, f32)> {
+        cmds.iter()
+            .filter_map(|c| {
+                if let DrawCommand::Rect(p) = c {
+                    Some((p.rect.x, p.rect.y))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn scroll_view_translates_child_positions() {
+        with_scope(|cx| {
+            use dusty_reactive::create_signal;
+
+            let scroll_signal: Signal<(f64, f64)> = create_signal((0.0, 50.0));
+
+            let node = el("ScrollContainer", cx)
+                .style(Style {
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
+                    overflow: Some(Overflow::Scroll),
+                    background: Some(Color::WHITE),
+                    ..Style::default()
+                })
+                .data(scroll_signal)
+                .child(
+                    el("Child", cx)
+                        .style(Style {
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
+                            background: Some(Color::BLACK),
+                            ..Style::default()
+                        })
+                        .build_node(),
+                )
+                .build_node();
+
+            let cmds = walk_with_mock(&node, 400.0, 300.0);
+            let positions = extract_rect_positions(&cmds);
+
+            // Container at (0,0), child should be shifted up by scroll offset (50)
+            assert!(positions.len() >= 2);
+            // Container rect is not shifted
+            assert_eq!(positions[0].1, 0.0, "container should be at y=0");
+            // Child rect should be shifted by -50
+            assert_eq!(
+                positions[1].1, -50.0,
+                "child should be at y=-50 due to scroll"
+            );
+        });
+    }
+
+    #[test]
+    fn scroll_view_clip_region_not_shifted() {
+        with_scope(|cx| {
+            use dusty_reactive::create_signal;
+
+            let scroll_signal: Signal<(f64, f64)> = create_signal((0.0, 30.0));
+
+            let node = el("ScrollContainer", cx)
+                .style(Style {
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
+                    overflow: Some(Overflow::Scroll),
+                    background: Some(Color::WHITE),
+                    ..Style::default()
+                })
+                .data(scroll_signal)
+                .child(
+                    el("Child", cx)
+                        .style(Style {
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
+                            background: Some(Color::BLACK),
+                            ..Style::default()
+                        })
+                        .build_node(),
+                )
+                .build_node();
+
+            let cmds = walk_with_mock(&node, 400.0, 300.0);
+
+            // The child element should have a clip_rect baked from the scroll
+            // container. That clip rect should use the container's unshifted position.
+            let child_prim = cmds.iter().find_map(|c| {
+                if let DrawCommand::Rect(prim) = c {
+                    if prim.fill_color == Color::BLACK {
+                        return Some(prim);
+                    }
+                }
+                None
+            });
+            assert!(
+                child_prim.is_some(),
+                "child element should produce a Rect command"
+            );
+            let clip = child_prim.unwrap().clip_rect.as_ref();
+            assert!(
+                clip.is_some(),
+                "child should have clip_rect from scroll container"
+            );
+            assert_eq!(clip.unwrap().y, 0.0, "clip rect should be at container y=0");
+        });
+    }
+
+    #[test]
+    fn scroll_view_translates_child_at_hidpi_2x() {
+        // P0-#4 verification: with scale_factor=2.0 (Retina), the scroll
+        // offset must be subtracted in logical space *before* scaling, so a
+        // child at logical (10, 100) inside a container scrolled by (0, 50)
+        // appears at physical (20, 100) — i.e. (10 * 2, (100 - 50) * 2).
+        with_scope(|cx| {
+            use dusty_reactive::create_signal;
+
+            let scroll_signal: Signal<(f64, f64)> = create_signal((0.0, 50.0));
+
+            let node = el("ScrollContainer", cx)
+                .style(Style {
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
+                    overflow: Some(Overflow::Scroll),
+                    background: Some(Color::WHITE),
+                    ..Style::default()
+                })
+                .data(scroll_signal)
+                .child(
+                    el("Child", cx)
+                        .style(Style {
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
+                            background: Some(Color::BLACK),
+                            ..Style::default()
+                        })
+                        .build_node(),
+                )
+                .build_node();
+
+            let cmds = walk_with_mock_scale(&node, 400.0, 300.0, 2.0);
+            let positions = extract_rect_positions(&cmds);
+
+            assert!(positions.len() >= 2);
+            // Container is at logical (0, 0), no scroll affects it: physical (0, 0).
+            assert_eq!(
+                positions[0],
+                (0.0, 0.0),
+                "container at scale 2x: physical (0, 0)"
+            );
+            // Child is at logical (0, 0) within container; with scroll y=50
+            // the adjusted logical y is -50; scale 2x gives physical y = -100.
+            assert_eq!(
+                positions[1],
+                (0.0, -100.0),
+                "child at scale 2x with y=50 scroll: physical (0, -100)"
+            );
+        });
+    }
+
+    #[test]
+    fn scroll_view_zero_offset_unchanged() {
+        with_scope(|cx| {
+            use dusty_reactive::create_signal;
+
+            let scroll_signal: Signal<(f64, f64)> = create_signal((0.0, 0.0));
+
+            let node = el("ScrollContainer", cx)
+                .style(Style {
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(200.0)),
+                    overflow: Some(Overflow::Scroll),
+                    background: Some(Color::WHITE),
+                    ..Style::default()
+                })
+                .data(scroll_signal)
+                .child(
+                    el("Child", cx)
+                        .style(Style {
+                            width: Some(Length::Px(100.0)),
+                            height: Some(Length::Px(100.0)),
+                            background: Some(Color::BLACK),
+                            ..Style::default()
+                        })
+                        .build_node(),
+                )
+                .build_node();
+
+            let cmds = walk_with_mock(&node, 400.0, 300.0);
+            let positions = extract_rect_positions(&cmds);
+
+            assert!(positions.len() >= 2);
+            // With zero scroll offset, child should be at normal position
+            assert_eq!(
+                positions[1].1, 0.0,
+                "child should be at y=0 with zero offset"
+            );
+        });
+    }
+
+    // -- Text Y-position tests --
+
+    fn extract_glyph_ys(cmds: &[DrawCommand]) -> Vec<f32> {
+        cmds.iter()
+            .filter_map(|c| {
+                if let DrawCommand::Text(tp) = c {
+                    Some(tp)
+                } else {
+                    None
+                }
+            })
+            .flat_map(|tp| tp.glyphs.iter().map(|g| g.y))
+            .collect()
+    }
+
+    #[test]
+    fn text_multiline_glyphs_dont_overlap() {
+        // Two-line text: verify second line glyphs have Y > first line glyph Y values
+        with_scope(|cx| {
+            // Narrow container to force wrapping
+            let node = el("Container", cx)
+                .style(Style {
+                    width: Some(Length::Px(60.0)),
+                    height: Some(Length::Px(200.0)),
+                    ..Style::default()
+                })
+                .child(text("Hello World this is a long text that wraps"))
+                .build_node();
+
+            let layout = compute_layout(&node, 60.0, 200.0, &MockMeasure).unwrap();
+            let text_system = TextSystem::new();
+            let mut glyph_cache = GlyphCache::new(512, 512);
+            let mut rasterizer = GlyphRasterizer::new();
+
+            let cmds = walk_tree(
+                &node,
+                &layout,
+                &text_system,
+                &mut glyph_cache,
+                &mut rasterizer,
+                1.0,
+            );
+
+            let ys = extract_glyph_ys(&cmds);
+            if ys.len() < 2 {
+                // Font system may be unavailable in CI — skip gracefully
+                return;
+            }
+
+            // Group glyphs by approximate Y (within 2px tolerance)
+            let mut y_levels: Vec<f32> = Vec::new();
+            for &y in &ys {
+                if !y_levels.iter().any(|&ly| (ly - y).abs() < 2.0) {
+                    y_levels.push(y);
+                }
+            }
+            y_levels.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            assert!(
+                y_levels.len() >= 2,
+                "expected at least 2 Y levels (multiple lines), got {}: {y_levels:?}",
+                y_levels.len()
+            );
+
+            // Each successive line should be strictly below the previous
+            for pair in y_levels.windows(2) {
+                assert!(
+                    pair[1] > pair[0],
+                    "line Y values should increase: {} should be > {}",
+                    pair[1],
+                    pair[0]
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn text_glyph_y_within_layout_rect() {
+        // Single-line text: glyph Y values should be within the text node's layout rect
+        with_scope(|cx| {
+            let node = el("Container", cx)
+                .style(Style {
+                    width: Some(Length::Px(400.0)),
+                    height: Some(Length::Px(100.0)),
+                    ..Style::default()
+                })
+                .child(text("Hello"))
+                .build_node();
+
+            let layout = compute_layout(&node, 400.0, 100.0, &MockMeasure).unwrap();
+
+            // Text node is ID 1 (Element=0, Text=1)
+            let text_rect = layout.get(LayoutNodeId(1)).unwrap();
+
+            let text_system = TextSystem::new();
+            let mut glyph_cache = GlyphCache::new(512, 512);
+            let mut rasterizer = GlyphRasterizer::new();
+
+            let cmds = walk_tree(
+                &node,
+                &layout,
+                &text_system,
+                &mut glyph_cache,
+                &mut rasterizer,
+                1.0,
+            );
+
+            let ys = extract_glyph_ys(&cmds);
+            if ys.is_empty() {
+                return; // Font system unavailable
+            }
+
+            for &y in &ys {
+                assert!(
+                    y >= text_rect.y - 1.0,
+                    "glyph y ({y}) should be >= layout rect y ({})",
+                    text_rect.y
+                );
+                assert!(
+                    y < text_rect.y + text_rect.height + 16.0, // generous margin for descenders
+                    "glyph y ({y}) should be within layout rect (y={}, h={})",
+                    text_rect.y,
+                    text_rect.height
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn text_glyph_positions_scale_proportionally() {
+        // Multi-line text at 2x scale should still produce multiple Y levels
+        // with correct ascending order (same invariant as 1x)
+        with_scope(|cx| {
+            let node = el("Container", cx)
+                .style(Style {
+                    width: Some(Length::Px(60.0)),
+                    height: Some(Length::Px(200.0)),
+                    ..Style::default()
+                })
+                .child(text("Hello World this is a long text that wraps"))
+                .build_node();
+
+            let layout = compute_layout(&node, 60.0, 200.0, &MockMeasure).unwrap();
+            let text_system = TextSystem::new();
+
+            let mut gc = GlyphCache::new(512, 512);
+            let mut rast = GlyphRasterizer::new();
+            let cmds = walk_tree(&node, &layout, &text_system, &mut gc, &mut rast, 2.0);
+            let ys = extract_glyph_ys(&cmds);
+
+            if ys.len() < 2 {
+                return; // Font system unavailable
+            }
+
+            // Group into Y levels
+            let mut y_levels: Vec<f32> = Vec::new();
+            for &y in &ys {
+                if !y_levels.iter().any(|&ly| (ly - y).abs() < 4.0) {
+                    y_levels.push(y);
+                }
+            }
+            y_levels.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+            assert!(
+                y_levels.len() >= 2,
+                "at 2x scale, should still have multiple Y levels: {y_levels:?}"
+            );
+            for pair in y_levels.windows(2) {
+                assert!(
+                    pair[1] > pair[0],
+                    "at 2x scale, Y levels should increase: {} > {}",
+                    pair[1],
+                    pair[0]
+                );
+            }
+        });
+    }
+
     #[test]
     fn inherited_foreground_color_used() {
         with_scope(|cx| {
             let node = el("Parent", cx)
                 .style(Style {
-                    width: Some(200.0),
-                    height: Some(100.0),
+                    width: Some(Length::Px(200.0)),
+                    height: Some(Length::Px(100.0)),
                     foreground: Some(Color::rgb(1.0, 0.0, 0.0)), // red
                     ..Style::default()
                 })

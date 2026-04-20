@@ -128,7 +128,7 @@ impl View for ScrollView {
             .attr("axis", axis_str)
             .style(merged)
             .data(signal)
-            .on_scroll(move |_ctx: &EventContext, e: &ScrollEvent| {
+            .on_scroll(move |ctx: &EventContext, e: &ScrollEvent| {
                 let current = signal.get();
                 let raw = (current.0 + e.delta_x, current.1 + e.delta_y);
                 // Clamp: lower bound to 0.0, zero out irrelevant axis
@@ -138,10 +138,13 @@ impl View for ScrollView {
                     ScrollAxis::Horizontal => (raw.0.max(0.0), 0.0),
                     ScrollAxis::Both => (raw.0.max(0.0), raw.1.max(0.0)),
                 };
-                signal.set(clamped);
+                signal.set_if_changed(clamped);
                 if let Some(ref cb) = on_scroll {
                     cb(e.delta_x, e.delta_y);
                 }
+                // Stop propagation so a wheel event consumed by an inner
+                // ScrollView does not also scroll every ancestor ScrollView.
+                ctx.stop_propagation();
             });
 
         if let Some(child_fn) = self.child {
@@ -170,6 +173,7 @@ mod tests {
     use super::*;
     use dusty_core::{AttributeValue, Element};
     use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
+    use dusty_style::Length;
 
     fn with_scope(f: impl FnOnce(Scope)) {
         initialize_runtime();
@@ -307,6 +311,58 @@ mod tests {
     }
 
     #[test]
+    fn zero_delta_scroll_does_not_notify_subscribers() {
+        // After P0-#8: ScrollView uses set_if_changed. A scroll event whose
+        // clamped result equals the current offset must not fire subscribers.
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        with_scope(|cx| {
+            let node = ScrollView::new().axis(ScrollAxis::Vertical).build(cx);
+            let el = extract_element(&node);
+            let sig = el
+                .custom_data()
+                .downcast_ref::<Signal<(f64, f64)>>()
+                .unwrap();
+
+            // Effect runs once on subscribe.
+            let count = Rc::new(Cell::new(0u32));
+            let count_for_effect = count.clone();
+            let sig_copy = *sig;
+            let _effect = dusty_reactive::create_effect(move || {
+                let _ = sig_copy.get();
+                count_for_effect.set(count_for_effect.get() + 1);
+            });
+            assert_eq!(count.get(), 1, "initial subscribe runs effect once");
+
+            // Scroll with delta (0, 0) → clamped == current; should not notify.
+            let ctx = dusty_core::event::EventContext::new(vec![]);
+            let event = dusty_core::event::ScrollEvent {
+                delta_x: 0.0,
+                delta_y: 0.0,
+            };
+            for handler in el.event_handlers() {
+                if handler.name() == "scroll" {
+                    handler.invoke(&ctx, &event);
+                }
+            }
+            assert_eq!(count.get(), 1, "no-op scroll must not notify subscribers");
+
+            // A real scroll DOES notify.
+            let event2 = dusty_core::event::ScrollEvent {
+                delta_x: 0.0,
+                delta_y: 5.0,
+            };
+            for handler in el.event_handlers() {
+                if handler.name() == "scroll" {
+                    handler.invoke(&ctx, &event2);
+                }
+            }
+            assert_eq!(count.get(), 2, "real scroll notifies once");
+        });
+    }
+
+    #[test]
     fn scroll_clamps_negative_offset() {
         with_scope(|cx| {
             let node = ScrollView::new().axis(ScrollAxis::Vertical).build(cx);
@@ -338,14 +394,60 @@ mod tests {
         with_scope(|cx| {
             let node = ScrollView::new()
                 .style(Style {
-                    width: Some(300.0),
+                    width: Some(Length::Px(300.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(300.0));
+            assert_eq!(style.width, Some(Length::Px(300.0)));
             assert_eq!(style.overflow, Some(Overflow::Scroll));
+        });
+    }
+
+    #[test]
+    fn nested_scroll_inner_consumes_event() {
+        // P0-#6: an inner ScrollView must call stop_propagation so the wheel
+        // event is not also applied to every ancestor ScrollView.
+        with_scope(|cx| {
+            let outer_node = ScrollView::new()
+                .axis(ScrollAxis::Vertical)
+                .child(ScrollView::new().axis(ScrollAxis::Vertical))
+                .build(cx);
+
+            // Extract outer & inner elements + their offset signals.
+            let outer_el = extract_element(&outer_node);
+            let outer_sig = *outer_el
+                .custom_data()
+                .downcast_ref::<Signal<(f64, f64)>>()
+                .unwrap();
+            // Outer element's first child is the inner Component(Element).
+            let inner_node = &outer_el.children()[0];
+            let inner_el = extract_element(inner_node);
+            let inner_sig = *inner_el
+                .custom_data()
+                .downcast_ref::<Signal<(f64, f64)>>()
+                .unwrap();
+
+            // Dispatch a scroll event targeted at the inner ScrollView.
+            // Path: Component(outer) → Element(outer) → Component(inner) → Element(inner).
+            let event = dusty_core::event::ScrollEvent {
+                delta_x: 0.0,
+                delta_y: 30.0,
+            };
+            let result = dusty_core::event::dispatch_event(&outer_node, &[0, 0, 0], &event);
+            assert!(result.is_ok(), "dispatch should succeed");
+
+            assert_eq!(
+                inner_sig.get().1,
+                30.0,
+                "inner ScrollView should consume the event"
+            );
+            assert_eq!(
+                outer_sig.get().1,
+                0.0,
+                "outer ScrollView must not also receive the event (stop_propagation)"
+            );
         });
     }
 }

@@ -2,7 +2,7 @@
 
 use dusty_style::{
     palette::Palette, tokens, Color, Corners, Edges, FlexDirection, FontWeight, InteractionState,
-    JustifyContent, Overflow, Style,
+    JustifyContent, Length, LengthPercent, Overflow, Style,
 };
 
 #[test]
@@ -22,8 +22,8 @@ fn full_builder_chain_produces_correct_style() {
         .disabled(|s| s.opacity(0.5));
 
     assert_eq!(style.flex_direction, Some(FlexDirection::Column));
-    assert_eq!(style.padding, Edges::all(16.0));
-    assert_eq!(style.gap, Some(8.0));
+    assert_eq!(style.padding, Edges::all(LengthPercent::Px(16.0)));
+    assert_eq!(style.gap, Some(LengthPercent::Px(8.0)));
     assert_eq!(style.background, Some(Color::WHITE));
     assert_eq!(style.foreground, Palette::SLATE.get(900));
     assert_eq!(style.border_radius, Corners::all(8.0));
@@ -53,7 +53,7 @@ fn builder_plus_cascade_merge() {
     let result = base.merge(&card);
 
     // Card padding overrides base
-    assert_eq!(result.padding, Edges::all(16.0));
+    assert_eq!(result.padding, Edges::all(LengthPercent::Px(16.0)));
     // Card bg overrides base
     assert_eq!(result.background, Some(Color::WHITE));
     // Font comes from base (card didn't set it)
@@ -142,7 +142,7 @@ fn builder_with_token_equivalence() {
     let builder_style = Style::default().p(4.0).rounded_md().shadow_sm();
 
     let manual_style = Style {
-        padding: Edges::all(tokens::spacing(4.0)),
+        padding: Edges::all(LengthPercent::Px(tokens::spacing(4.0))),
         border_radius: Corners::all(tokens::RadiusToken::Md.to_px()),
         shadow: Some(tokens::ShadowToken::Sm.to_shadows().into_owned()),
         ..Style::default()
@@ -163,8 +163,8 @@ fn overflow_and_opacity_integration() {
         .overflow_hidden()
         .opacity(0.95);
 
-    assert_eq!(modal.width, Some(400.0));
-    assert_eq!(modal.height, Some(400.0));
+    assert_eq!(modal.width, Some(Length::Px(400.0)));
+    assert_eq!(modal.height, Some(Length::Px(400.0)));
     assert_eq!(modal.overflow, Some(Overflow::Hidden));
     assert_eq!(modal.opacity, Some(0.95));
 }
@@ -181,6 +181,6 @@ fn flex_layout_integration() {
     assert_eq!(row.flex_direction, Some(FlexDirection::Row));
     assert_eq!(row.align_items, Some(dusty_style::AlignItems::Center));
     assert_eq!(row.justify_content, Some(JustifyContent::SpaceBetween));
-    assert_eq!(row.gap, Some(16.0));
+    assert_eq!(row.gap, Some(LengthPercent::Px(16.0)));
     assert_eq!(row.flex_wrap, Some(dusty_style::FlexWrap::Wrap));
 }

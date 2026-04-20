@@ -80,6 +80,89 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
+/// A dimensional value: pixels, a percentage of the parent, or `auto`.
+///
+/// `Percent` is a fraction in `0.0..=1.0` (so `Percent(0.5)` means 50%).
+/// `Auto` defers sizing to the layout engine — on margin it enables
+/// flex-container centering; on size fields it behaves like "unset".
+///
+/// # Examples
+///
+/// ```
+/// use dusty_style::Length;
+///
+/// let fixed = Length::Px(10.0);
+/// let half = Length::Percent(0.5);
+/// let auto = Length::Auto;
+/// assert_ne!(fixed, auto);
+/// assert_ne!(fixed, half);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Length {
+    /// A fixed length in pixels.
+    Px(f32),
+    /// A fraction of the parent's corresponding dimension (0.0–1.0).
+    Percent(f32),
+    /// Auto — defer to the layout engine.
+    Auto,
+}
+
+impl Default for Length {
+    fn default() -> Self {
+        Self::Px(0.0)
+    }
+}
+
+/// A dimensional value without `Auto`. Used for fields where `Auto` has no
+/// layout meaning (padding, gap, border).
+///
+/// # Examples
+///
+/// ```
+/// use dusty_style::LengthPercent;
+///
+/// let fixed = LengthPercent::Px(8.0);
+/// let half = LengthPercent::Percent(0.5);
+/// assert_ne!(fixed, half);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LengthPercent {
+    /// A fixed length in pixels.
+    Px(f32),
+    /// A fraction of the parent's corresponding dimension (0.0–1.0).
+    Percent(f32),
+}
+
+impl Default for LengthPercent {
+    fn default() -> Self {
+        Self::Px(0.0)
+    }
+}
+
+impl LengthPercent {
+    /// Returns the pixel value if this is `Px`, otherwise `None`.
+    /// Percent values need a resolved base to convert; callers that have one
+    /// should inspect the variant directly.
+    #[must_use]
+    pub const fn as_px(self) -> Option<f32> {
+        match self {
+            Self::Px(v) => Some(v),
+            Self::Percent(_) => None,
+        }
+    }
+}
+
+impl Length {
+    /// Returns the pixel value if this is `Px`, otherwise `None`.
+    #[must_use]
+    pub const fn as_px(self) -> Option<f32> {
+        match self {
+            Self::Px(v) => Some(v),
+            Self::Percent(_) | Self::Auto => None,
+        }
+    }
+}
+
 /// Overflow behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Overflow {
@@ -92,6 +175,30 @@ pub enum Overflow {
     Scroll,
     /// Scrollbars appear only when needed.
     Auto,
+}
+
+/// Display mode for an element.
+///
+/// Controls how the element participates in layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Display {
+    /// Flexbox layout (default).
+    #[default]
+    Flex,
+    /// Block layout.
+    Block,
+    /// Element is removed from layout entirely.
+    None,
+}
+
+/// Positioning scheme for an element.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Position {
+    /// Positioned relative to its normal layout position (default).
+    #[default]
+    Relative,
+    /// Positioned relative to its nearest positioned ancestor.
+    Absolute,
 }
 
 /// Current interaction state for resolving state-based style overrides.
@@ -123,10 +230,10 @@ pub struct InteractionState {
 /// # Examples
 ///
 /// ```
-/// use dusty_style::{Style, Color, Edges, FlexDirection};
+/// use dusty_style::{Style, Color, Edges, FlexDirection, LengthPercent};
 ///
 /// let card = Style {
-///     padding: Edges::all(16.0),
+///     padding: Edges::all(LengthPercent::Px(16.0)),
 ///     background: Some(Color::WHITE),
 ///     flex_direction: Some(FlexDirection::Column),
 ///     ..Style::default()
@@ -135,22 +242,33 @@ pub struct InteractionState {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Style {
     // -- Box model --
-    /// Padding (inner spacing).
-    pub padding: Edges<f32>,
-    /// Margin (outer spacing).
-    pub margin: Edges<f32>,
-    /// Explicit width in pixels.
-    pub width: Option<f32>,
-    /// Explicit height in pixels.
-    pub height: Option<f32>,
-    /// Minimum width in pixels.
-    pub min_width: Option<f32>,
-    /// Minimum height in pixels.
-    pub min_height: Option<f32>,
-    /// Maximum width in pixels.
-    pub max_width: Option<f32>,
-    /// Maximum height in pixels.
-    pub max_height: Option<f32>,
+    /// Padding (inner spacing). Supports pixels and percentages.
+    pub padding: Edges<LengthPercent>,
+    /// Margin (outer spacing). Supports pixels, percentages, and `Auto` for centering.
+    pub margin: Edges<Length>,
+    /// Explicit width.
+    pub width: Option<Length>,
+    /// Explicit height.
+    pub height: Option<Length>,
+    /// Minimum width.
+    pub min_width: Option<Length>,
+    /// Minimum height.
+    pub min_height: Option<Length>,
+    /// Maximum width.
+    pub max_width: Option<Length>,
+    /// Maximum height.
+    pub max_height: Option<Length>,
+    /// Aspect ratio (`width / height`). Respected when exactly one of
+    /// `width` / `height` is constrained.
+    pub aspect_ratio: Option<f32>,
+
+    // -- Layout mode --
+    /// Display mode.
+    pub display: Option<Display>,
+    /// Positioning scheme.
+    pub position: Option<Position>,
+    /// Inset values for positioned elements (top, right, bottom, left).
+    pub inset: Edges<Length>,
 
     // -- Flex layout --
     /// Flex container direction.
@@ -161,8 +279,8 @@ pub struct Style {
     pub flex_grow: Option<f32>,
     /// Flex shrink factor.
     pub flex_shrink: Option<f32>,
-    /// Flex basis in pixels.
-    pub flex_basis: Option<f32>,
+    /// Flex basis.
+    pub flex_basis: Option<Length>,
     /// Cross-axis alignment for children.
     pub align_items: Option<AlignItems>,
     /// Cross-axis alignment override for this item.
@@ -170,11 +288,11 @@ pub struct Style {
     /// Main-axis distribution.
     pub justify_content: Option<JustifyContent>,
     /// Gap between items (both axes).
-    pub gap: Option<f32>,
+    pub gap: Option<LengthPercent>,
     /// Gap between rows.
-    pub row_gap: Option<f32>,
+    pub row_gap: Option<LengthPercent>,
     /// Gap between columns.
-    pub column_gap: Option<f32>,
+    pub column_gap: Option<LengthPercent>,
 
     // -- Visual --
     /// Background color.
@@ -241,6 +359,12 @@ impl Style {
             min_height: other.min_height.or(self.min_height),
             max_width: other.max_width.or(self.max_width),
             max_height: other.max_height.or(self.max_height),
+            aspect_ratio: other.aspect_ratio.or(self.aspect_ratio),
+
+            // Layout mode
+            display: other.display.or(self.display),
+            position: other.position.or(self.position),
+            inset: self.inset.merge(&other.inset),
 
             // Flex layout
             flex_direction: other.flex_direction.or(self.flex_direction),
@@ -327,16 +451,25 @@ impl Style {
         result
     }
 
-    /// Returns the effective row gap: `row_gap` if set, else `gap`, else `0.0`.
+    /// Returns the effective row gap in pixels. Percent gaps resolve to `0.0`
+    /// here because this helper has no parent reference; layout resolves
+    /// percent gaps through the taffy conversion path.
     #[must_use]
     pub fn resolved_row_gap(&self) -> f32 {
-        self.row_gap.or(self.gap).unwrap_or(0.0)
+        match self.row_gap.or(self.gap) {
+            Some(LengthPercent::Px(v)) => v,
+            Some(LengthPercent::Percent(_)) | None => 0.0,
+        }
     }
 
-    /// Returns the effective column gap: `column_gap` if set, else `gap`, else `0.0`.
+    /// Returns the effective column gap in pixels. Percent gaps resolve to
+    /// `0.0` here — see [`Self::resolved_row_gap`].
     #[must_use]
     pub fn resolved_column_gap(&self) -> f32 {
-        self.column_gap.or(self.gap).unwrap_or(0.0)
+        match self.column_gap.or(self.gap) {
+            Some(LengthPercent::Px(v)) => v,
+            Some(LengthPercent::Percent(_)) | None => 0.0,
+        }
     }
 }
 
@@ -364,19 +497,19 @@ mod tests {
     #[test]
     fn merge_option_fields_other_wins() {
         let base = Style {
-            width: Some(100.0),
-            height: Some(200.0),
+            width: Some(Length::Px(100.0)),
+            height: Some(Length::Px(200.0)),
             background: Some(Color::WHITE),
             ..Style::default()
         };
         let over = Style {
-            width: Some(300.0),
+            width: Some(Length::Px(300.0)),
             background: Some(Color::BLACK),
             ..Style::default()
         };
         let merged = base.merge(&over);
-        assert_eq!(merged.width, Some(300.0));
-        assert_eq!(merged.height, Some(200.0));
+        assert_eq!(merged.width, Some(Length::Px(300.0)));
+        assert_eq!(merged.height, Some(Length::Px(200.0)));
         assert_eq!(merged.background, Some(Color::BLACK));
     }
 
@@ -396,21 +529,21 @@ mod tests {
     #[test]
     fn merge_edges_per_field() {
         let base = Style {
-            padding: Edges::all(8.0),
+            padding: Edges::all(LengthPercent::Px(8.0)),
             ..Style::default()
         };
         let over = Style {
             padding: Edges {
-                top: Some(16.0),
+                top: Some(LengthPercent::Px(16.0)),
                 ..Edges::default()
             },
             ..Style::default()
         };
         let merged = base.merge(&over);
-        assert_eq!(merged.padding.top, Some(16.0));
-        assert_eq!(merged.padding.right, Some(8.0));
-        assert_eq!(merged.padding.bottom, Some(8.0));
-        assert_eq!(merged.padding.left, Some(8.0));
+        assert_eq!(merged.padding.top, Some(LengthPercent::Px(16.0)));
+        assert_eq!(merged.padding.right, Some(LengthPercent::Px(8.0)));
+        assert_eq!(merged.padding.bottom, Some(LengthPercent::Px(8.0)));
+        assert_eq!(merged.padding.left, Some(LengthPercent::Px(8.0)));
     }
 
     #[test]
@@ -507,7 +640,7 @@ mod tests {
     #[test]
     fn three_style_cascade_chain() {
         let base = Style {
-            padding: Edges::all(8.0),
+            padding: Edges::all(LengthPercent::Px(8.0)),
             background: Some(Color::WHITE),
             font: FontStyle {
                 size: Some(14.0),
@@ -517,8 +650,8 @@ mod tests {
         };
         let component = Style {
             padding: Edges {
-                top: Some(16.0),
-                bottom: Some(16.0),
+                top: Some(LengthPercent::Px(16.0)),
+                bottom: Some(LengthPercent::Px(16.0)),
                 ..Edges::default()
             },
             background: Some(Color::hex(0xF0F0F0)),
@@ -537,8 +670,8 @@ mod tests {
         let result = base.merge(&component).merge(&hover);
 
         // Padding: top/bottom from component, left/right from base
-        assert_eq!(result.padding.top, Some(16.0));
-        assert_eq!(result.padding.left, Some(8.0));
+        assert_eq!(result.padding.top, Some(LengthPercent::Px(16.0)));
+        assert_eq!(result.padding.left, Some(LengthPercent::Px(8.0)));
         // Background: hover wins
         assert_eq!(result.background, Some(Color::hex(0xE0E0E0)));
         // Font: size from base, weight from component
@@ -553,13 +686,13 @@ mod tests {
         use std::any::Any;
 
         let style = Style {
-            width: Some(100.0),
+            width: Some(Length::Px(100.0)),
             ..Style::default()
         };
         let boxed: Box<dyn Any> = Box::new(style);
         let downcast = boxed.downcast_ref::<Style>();
         assert!(downcast.is_some());
-        assert_eq!(downcast.map(|s| s.width), Some(Some(100.0)));
+        assert_eq!(downcast.map(|s| s.width), Some(Some(Length::Px(100.0))));
     }
 
     #[test]
@@ -698,8 +831,8 @@ mod tests {
     #[test]
     fn resolved_row_gap_prefers_row_gap_over_gap() {
         let s = Style {
-            gap: Some(10.0),
-            row_gap: Some(20.0),
+            gap: Some(LengthPercent::Px(10.0)),
+            row_gap: Some(LengthPercent::Px(20.0)),
             ..Style::default()
         };
         assert_eq!(s.resolved_row_gap(), 20.0);
@@ -708,7 +841,7 @@ mod tests {
     #[test]
     fn resolved_row_gap_falls_back_to_gap() {
         let s = Style {
-            gap: Some(10.0),
+            gap: Some(LengthPercent::Px(10.0)),
             ..Style::default()
         };
         assert_eq!(s.resolved_row_gap(), 10.0);
@@ -721,10 +854,19 @@ mod tests {
     }
 
     #[test]
+    fn resolved_row_gap_percent_reports_zero() {
+        let s = Style {
+            gap: Some(LengthPercent::Percent(0.5)),
+            ..Style::default()
+        };
+        assert_eq!(s.resolved_row_gap(), 0.0);
+    }
+
+    #[test]
     fn resolved_column_gap_prefers_column_gap_over_gap() {
         let s = Style {
-            gap: Some(10.0),
-            column_gap: Some(30.0),
+            gap: Some(LengthPercent::Px(10.0)),
+            column_gap: Some(LengthPercent::Px(30.0)),
             ..Style::default()
         };
         assert_eq!(s.resolved_column_gap(), 30.0);

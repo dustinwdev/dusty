@@ -3,7 +3,8 @@ use dusty_core::event::{ClickEvent, DragEvent, EventContext};
 use dusty_core::node::{ComponentNode, Node};
 use dusty_core::view::View;
 use dusty_reactive::{create_signal, Scope, Signal};
-use dusty_style::{Corners, Style};
+use dusty_style::theme::use_theme;
+use dusty_style::{Corners, Length, Style};
 
 type SliderChangeCallback = std::rc::Rc<Option<Box<dyn Fn(f64)>>>;
 
@@ -36,6 +37,7 @@ pub struct Slider {
     min: f64,
     max: f64,
     step: Option<f64>,
+    track_width: f32,
     disabled: bool,
     user_style: Option<Style>,
     on_change: Option<Box<dyn Fn(f64)>>,
@@ -50,6 +52,7 @@ impl Slider {
             min: 0.0,
             max: 100.0,
             step: None,
+            track_width: 200.0,
             disabled: false,
             user_style: None,
             on_change: None,
@@ -88,6 +91,13 @@ impl Slider {
     #[must_use]
     pub const fn step(mut self, step: f64) -> Self {
         self.step = Some(step);
+        self
+    }
+
+    /// Sets the track width used for drag/click fraction calculations.
+    #[must_use]
+    pub const fn track_width(mut self, width: f32) -> Self {
+        self.track_width = width;
         self
     }
 
@@ -136,10 +146,19 @@ fn clamp(val: f64, min: f64, max: f64) -> f64 {
 }
 
 impl View for Slider {
+    #[allow(clippy::unreadable_literal)]
     fn build(self, cx: Scope) -> Node {
+        let theme = use_theme();
         let base = Style {
-            height: Some(4.0),
-            border_radius: Corners::all(2.0),
+            height: Some(Length::Px(24.0)),
+            flex_grow: Some(1.0),
+            border_radius: Corners::all(4.0),
+            background: Some(
+                theme
+                    .secondary
+                    .get(200)
+                    .unwrap_or_else(|| dusty_style::Color::hex(0xe2e8f0)),
+            ),
             ..Style::default()
         };
 
@@ -147,6 +166,15 @@ impl View for Slider {
             base.merge(user)
         } else {
             base
+        };
+
+        let merged = if self.disabled {
+            merged.merge(&Style {
+                opacity: Some(0.5),
+                ..Style::default()
+            })
+        } else {
+            merged
         };
 
         let signal = match self.source {
@@ -171,6 +199,7 @@ impl View for Slider {
             let max = self.max;
             let step_opt = self.step;
             let on_change = self.on_change;
+            let track_w = f64::from(self.track_width);
 
             let sig_drag = signal;
             let on_change_drag: SliderChangeCallback = std::rc::Rc::new(on_change);
@@ -182,14 +211,13 @@ impl View for Slider {
                     return;
                 }
                 let current = sig_drag.get();
-                // delta_x as fraction of a notional 200px track width
-                let delta_frac = e.delta_x / 200.0;
-                let mut new_val = current + delta_frac * range;
+                let delta_frac = e.delta_x / track_w;
+                let mut new_val = delta_frac.mul_add(range, current);
                 if let Some(s) = step_opt {
                     new_val = snap(new_val, min, s);
                 }
                 new_val = clamp(new_val, min, max);
-                sig_drag.set(new_val);
+                sig_drag.set_if_changed(new_val);
                 if let Some(ref cb) = *on_change_drag {
                     cb(new_val);
                 }
@@ -201,14 +229,13 @@ impl View for Slider {
                 if range <= 0.0 {
                     return;
                 }
-                // x as fraction of notional 200px track
-                let frac = e.x / 200.0;
-                let mut new_val = min + frac * range;
+                let frac = e.x / track_w;
+                let mut new_val = frac.mul_add(range, min);
                 if let Some(s) = step_opt {
                     new_val = snap(new_val, min, s);
                 }
                 new_val = clamp(new_val, min, max);
-                sig_click.set(new_val);
+                sig_click.set_if_changed(new_val);
                 if let Some(ref cb) = *on_change_click {
                     cb(new_val);
                 }
@@ -341,15 +368,15 @@ mod tests {
         with_scope(|cx| {
             let node = Slider::new()
                 .style(Style {
-                    width: Some(300.0),
+                    width: Some(Length::Px(300.0)),
                     ..Style::default()
                 })
                 .build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>().unwrap();
-            assert_eq!(style.width, Some(300.0));
+            assert_eq!(style.width, Some(Length::Px(300.0)));
             // Base height still present
-            assert_eq!(style.height, Some(4.0));
+            assert_eq!(style.height, Some(Length::Px(24.0)));
         });
     }
 

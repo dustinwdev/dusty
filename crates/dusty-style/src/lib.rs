@@ -24,6 +24,6 @@ pub use gradient::{ColorStop, GradientDirection, LinearGradient};
 pub use palette::{ColorScale, Palette};
 pub use shadow::BoxShadow;
 pub use style::{
-    AlignItems, AlignSelf, FlexDirection, FlexWrap, InteractionState, JustifyContent, Overflow,
-    Style,
+    AlignItems, AlignSelf, Display, FlexDirection, FlexWrap, InteractionState, JustifyContent,
+    Length, LengthPercent, Overflow, Position, Style,
 };

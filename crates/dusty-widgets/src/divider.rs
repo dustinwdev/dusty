@@ -2,7 +2,7 @@ use dusty_core::el;
 use dusty_core::node::{ComponentNode, Node};
 use dusty_core::view::View;
 use dusty_reactive::Scope;
-use dusty_style::{Color, Style};
+use dusty_style::{Color, Length, Style};
 
 /// Orientation for the divider.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,13 +73,13 @@ impl View for Divider {
     fn build(self, cx: Scope) -> Node {
         let base = match self.orientation {
             Orientation::Horizontal => Style {
-                height: Some(1.0),
+                height: Some(Length::Px(1.0)),
                 flex_grow: Some(1.0),
                 background: Some(DEFAULT_DIVIDER_COLOR),
                 ..Style::default()
             },
             Orientation::Vertical => Style {
-                width: Some(1.0),
+                width: Some(Length::Px(1.0)),
                 flex_grow: Some(1.0),
                 background: Some(DEFAULT_DIVIDER_COLOR),
                 ..Style::default()
@@ -138,7 +138,7 @@ mod tests {
             let node = Divider::horizontal().build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>();
-            assert_eq!(style.map(|s| s.height), Some(Some(1.0)));
+            assert_eq!(style.map(|s| s.height), Some(Some(Length::Px(1.0))));
         });
     }
 
@@ -148,7 +148,7 @@ mod tests {
             let node = Divider::vertical().build(cx);
             let el = extract_element(&node);
             let style = el.style().downcast_ref::<Style>();
-            assert_eq!(style.map(|s| s.width), Some(Some(1.0)));
+            assert_eq!(style.map(|s| s.width), Some(Some(Length::Px(1.0))));
         });
     }
 

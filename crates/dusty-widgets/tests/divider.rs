@@ -2,7 +2,7 @@ use dusty_core::node::Node;
 use dusty_core::view::View;
 use dusty_core::{AttributeValue, Element};
 use dusty_reactive::{create_scope, dispose_runtime, initialize_runtime};
-use dusty_style::Style;
+use dusty_style::{Length, Style};
 use dusty_widgets::Divider;
 
 fn extract_element(node: &Node) -> &Element {
@@ -22,7 +22,7 @@ fn horizontal_divider_dimensions() {
         let node = Divider::horizontal().build(cx);
         let el = extract_element(&node);
         let style = el.style().downcast_ref::<Style>().unwrap();
-        assert_eq!(style.height, Some(1.0));
+        assert_eq!(style.height, Some(Length::Px(1.0)));
         assert_eq!(style.width, None); // stretches via flex_grow
         assert_eq!(style.flex_grow, Some(1.0));
         assert_eq!(
@@ -40,7 +40,7 @@ fn vertical_divider_dimensions() {
         let node = Divider::vertical().build(cx);
         let el = extract_element(&node);
         let style = el.style().downcast_ref::<Style>().unwrap();
-        assert_eq!(style.width, Some(1.0));
+        assert_eq!(style.width, Some(Length::Px(1.0)));
         assert_eq!(style.height, None); // stretches via flex_grow
         assert_eq!(style.flex_grow, Some(1.0));
         assert_eq!(
